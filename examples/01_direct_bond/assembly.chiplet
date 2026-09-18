@@ -1,0 +1,20 @@
+format_version: "1.0"
+
+assembly:
+  name: "SG13G2 die, direct bond, no bump/pillar stack"
+  description: "Minimal example: a die with no orientation: (defaults to face_up) and no connection:, attached directly to the interposer's own Dielectric."
+
+technologies:
+  intm4tm2:
+    description: "IHP IntM4TM2 silicon interposer"
+  sg13g2:
+    description: "IHP SG13G2 die"
+
+components:
+  - id: "interposer"
+    type: "interposer"
+    technology: "intm4tm2"
+
+  - id: "die1"
+    type: "die"
+    technology: "sg13g2"

@@ -1,0 +1,28 @@
+format_version: "1.0"
+
+assembly:
+  name: "Two SG13G2 dies, both flip-chip mounted via Cu-pillar bumps"
+  description: "Two dies of the identical technology, both bonded to the same interposer Dielectric through the same Cu-pillar method - demonstrates automatic name and GDS-layer collision avoidance across chiplets."
+
+technologies:
+  intm4tm2:
+    description: "IHP IntM4TM2 silicon interposer"
+  sg13g2:
+    description: "IHP SG13G2 die"
+
+components:
+  - id: "interposer"
+    type: "interposer"
+    technology: "intm4tm2"
+
+  - id: "die1"
+    type: "die"
+    technology: "sg13g2"
+    orientation: "flip_chip"
+    connection: "cupillar_opt1"
+
+  - id: "die2"
+    type: "die"
+    technology: "sg13g2"
+    orientation: "flip_chip"
+    connection: "cupillar_opt1"

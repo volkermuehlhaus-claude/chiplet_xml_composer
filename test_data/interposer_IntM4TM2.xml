@@ -1,0 +1,38 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<Stackup schemaVersion="3.1">
+  <!-- Created/modified using the XML Stackup Editor in Stackup Editor -->
+  <!-- Derived from SG13G2_with_interposer_thermal.xml: same materials/thicknesses, whole stack flipped top<->bottom (mirrored in Z). Positioned with absolute Zmin/Zmax throughout instead of Reference-relative chaining. -->
+  <!-- Reference-relative positioning requires gds2palace util_stackup_reader.py version 1.9.1 or newer -->
+  <Materials>
+    <Material Name="Metal4" Type="Conductor" Conductivity="23190000.0" Color="93e837" />
+    <Material Name="Metal5" Type="Conductor" Conductivity="23190000.0" Color="dcd146" />
+    <Material Name="TopMetal1" Type="Conductor" Conductivity="27800000.0" Color="ffe6bf" />
+    <Material Name="TopMetal2" Type="Conductor" Conductivity="30300000.0" Color="ff8000" />
+    <Material Name="TopVia2" Type="Conductor" Conductivity="3143000.0" Color="ff8000" />
+    <Material Name="TopVia1" Type="Conductor" Conductivity="2191000.0" Color="ffe6bf" />
+    <Material Name="Via4" Type="Conductor" Conductivity="1660000.0" Color="deac5e" />
+    <Material Name="CuPillar" Type="Conductor" Conductivity="33000000.0" Color="ff0000" />
+    <Material Name="SnAgSolder" Type="Conductor" Conductivity="7400000.0" Color="c0c0c0" />
+    <Material Name="Underfill" Type="Dielectric" Permittivity="1.0" DielectricLossTangent="0.0" Color="d0d0d0" />
+    <Material Name="Passive" Type="Dielectric" Permittivity="6.6" DielectricLossTangent="0.0" Color="a0a0f0" />
+    <Material Name="SiO2" Type="Dielectric" Permittivity="4.1" DielectricLossTangent="0.0" Color="fffcad" />
+    <Material Name="Substrate" Type="Semiconductor" Permittivity="11.9" DielectricLossTangent="0" Conductivity="2.0" Color="01e0ff" />
+  </Materials>
+  <ELayers LengthUnit="um">
+    <Dielectrics>
+      <Dielectric Name="iPassive" Reference="iSiO2" ReferenceEdge="Top" Material="Passive" Thickness="0.4000" Boundary="1039" />
+      <Dielectric Name="iSiO2" Reference="iSubstrate" ReferenceEdge="Top" Material="SiO2" Thickness="12.2700" Boundary="1039" />
+      <Dielectric Name="iSubstrate" Material="Substrate" Zmin="0.0000" Zmax="80.0000" Boundary="1039" />
+    </Dielectrics>
+    <Layers>
+      <Layer Name="iTopMetal2" Type="conductor" Reference="iTopVia2" ReferenceEdge="Top" Material="TopMetal2" Layer="1134" Zmin="0.0000" Zmax="3.0000" />
+      <Layer Name="iTopVia2" Type="via" Reference="iTopMetal1" ReferenceEdge="Top" Material="TopVia2" Layer="1133" Zmin="0.0000" Zmax="2.8000" />
+      <Layer Name="iTopMetal1" Type="conductor" Reference="iTopVia1" ReferenceEdge="Top" Material="TopMetal1" Layer="1126" Zmin="0.0000" Zmax="2.0000" />
+      <Layer Name="iTopVia1" Type="via" Reference="iMetal5" ReferenceEdge="Top" Material="TopVia1" Layer="1125" Zmin="0.0000" Zmax="0.8500" />
+      <Layer Name="iMetal5" Type="conductor" Reference="iVia4" ReferenceEdge="Top" Material="Metal5" Layer="1067" Zmin="0.0000" Zmax="0.4900" />
+      <Layer Name="iVia4" Type="via" Reference="iMetal4" ReferenceEdge="Top" Material="Via4" Layer="1066" Zmin="0.0000" Zmax="0.5400" />
+      <Layer Name="iMetal4" Type="conductor" Reference="iSiO2" ReferenceEdge="Bottom" Material="Metal4" Layer="1050" Zmin="0.6000" Zmax="1.0900" />
+      <Layer Name="Interposer_Backside" Type="sheet" Reference="iSubstrate" ReferenceEdge="Bottom" Material="PEC" Layer="900" Zmin="0.0000" Zmax="0.0000" />
+    </Layers>
+  </ELayers>
+</Stackup>

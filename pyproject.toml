@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chiplet-xml-composer"
+dynamic = ["version"]
+description = "Stitch several per-chiplet gds2palace stackup XML files into one combined stackup XML, driven by an IHP .chiplet assembly file"
+authors = [
+    { name = "Volker Muehlhaus", email = "volker@muehlhaus.com" }
+]
+license = "GPL-3.0-or-later"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "gds2palace",
+    "chiplet-format-io @ git+https://github.com/IHP-GmbH/chiplet-spec.git@3340e113ceae102cae2c0ace747f4ecb408da0bf#subdirectory=reference/python",
+]
+
+[project.urls]
+Homepage = "https://github.com/VolkerMuehlhaus/chiplet_xml_composer"
+Repository = "https://github.com/VolkerMuehlhaus/chiplet_xml_composer"
+
+[project.scripts]
+chiplet_xml_composer = "chiplet_xml_composer.composer:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "chiplet_xml_composer.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["chiplet_xml_composer*"]

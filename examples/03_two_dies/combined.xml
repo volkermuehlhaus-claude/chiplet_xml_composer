@@ -1,0 +1,135 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<Stackup schemaVersion="3.1">
+  <Materials>
+    <Material Name="Metal4" Type="Conductor" Conductivity="23190000.0" Color="93e837" />
+    <Material Name="Metal5" Type="Conductor" Conductivity="23190000.0" Color="dcd146" />
+    <Material Name="TopMetal1" Type="Conductor" Conductivity="27800000.0" Color="ffe6bf" />
+    <Material Name="TopMetal2" Type="Conductor" Conductivity="30300000.0" Color="ff8000" />
+    <Material Name="TopVia2" Type="Conductor" Conductivity="3143000.0" Color="ff8000" />
+    <Material Name="TopVia1" Type="Conductor" Conductivity="2191000.0" Color="ffe6bf" />
+    <Material Name="Via4" Type="Conductor" Conductivity="1660000.0" Color="deac5e" />
+    <Material Name="CuPillar" Type="Conductor" Conductivity="33000000.0" Color="ff0000" />
+    <Material Name="SnAgSolder" Type="Conductor" Conductivity="7400000.0" Color="c0c0c0" />
+    <Material Name="Underfill" Type="Dielectric" Permittivity="1.0" DielectricLossTangent="0.0" Color="d0d0d0" />
+    <Material Name="Passive" Type="Dielectric" Permittivity="6.6" DielectricLossTangent="0.0" Color="a0a0f0" />
+    <Material Name="SiO2" Type="Dielectric" Permittivity="4.1" DielectricLossTangent="0.0" Color="fffcad" />
+    <Material Name="Substrate" Type="Semiconductor" Permittivity="11.9" DielectricLossTangent="0" Conductivity="2.0" Color="01e0ff" />
+    <Material Name="Activ" Type="Conductor" Conductivity="357141.0" Color="00ff00" />
+    <Material Name="Metal1" Type="Conductor" Conductivity="21640000.0" Color="39bfff" />
+    <Material Name="Metal2" Type="Conductor" Conductivity="23190000.0" Color="ccccd9" />
+    <Material Name="Metal3" Type="Conductor" Conductivity="23190000.0" Color="d80000" />
+    <Material Name="Metal42" Type="Conductor" Conductivity="23190000.0" Color="93e837" />
+    <Material Name="Metal52" Type="Conductor" Conductivity="23190000.0" Color="dcd146" />
+    <Material Name="TopMetal12" Type="Conductor" Conductivity="27800000.0" Color="ffe6bf" />
+    <Material Name="TopMetal22" Type="Conductor" Conductivity="30300000.0" Color="ff8000" />
+    <Material Name="TopVia22" Type="Conductor" Conductivity="3143000.0" Color="ff8000" />
+    <Material Name="TopVia12" Type="Conductor" Conductivity="2191000.0" Color="ffe6bf" />
+    <Material Name="Via42" Type="Conductor" Conductivity="1660000.0" Color="deac5e" />
+    <Material Name="Via3" Type="Conductor" Conductivity="1660000.0" Color="9ba940" />
+    <Material Name="Via2" Type="Conductor" Conductivity="1660000.0" Color="ff3736" />
+    <Material Name="Via1" Type="Conductor" Conductivity="1660000.0" Color="ccccff" />
+    <Material Name="Cont" Type="Conductor" Conductivity="2390000.0" Color="00ffff" />
+    <Material Name="Passive2" Type="Dielectric" Permittivity="6.6" DielectricLossTangent="0.0" Color="a0a0f0" />
+    <Material Name="SiO22" Type="Dielectric" Permittivity="4.1" DielectricLossTangent="0.0" Color="fffcad" />
+    <Material Name="Substrate2" Type="Semiconductor" Permittivity="11.9" DielectricLossTangent="0" Conductivity="2.0" Color="01e0ff" />
+    <Material Name="EPI" Type="Semiconductor" Permittivity="11.9" DielectricLossTangent="0" Conductivity="5.0" Color="294fff" />
+    <Material Name="AIR" Type="Dielectric" Permittivity="1.0" DielectricLossTangent="0.0" Color="d0d0d0" />
+    <Material Name="Vmim" Type="Conductor" Conductivity="2191000.0" Color="ffe6bf" />
+    <Material Name="MIM" Type="Conductor" Conductivity="500000.0" Color="e6ffbf" />
+    <Material Name="LOWLOSS" Type="Conductor" Conductivity="1E10" Color="ff0000" />
+    <Material Name="Activ2" Type="Conductor" Conductivity="357141.0" Color="00ff00" />
+    <Material Name="Metal12" Type="Conductor" Conductivity="21640000.0" Color="39bfff" />
+    <Material Name="Metal22" Type="Conductor" Conductivity="23190000.0" Color="ccccd9" />
+    <Material Name="Metal32" Type="Conductor" Conductivity="23190000.0" Color="d80000" />
+    <Material Name="Metal43" Type="Conductor" Conductivity="23190000.0" Color="93e837" />
+    <Material Name="Metal53" Type="Conductor" Conductivity="23190000.0" Color="dcd146" />
+    <Material Name="TopMetal13" Type="Conductor" Conductivity="27800000.0" Color="ffe6bf" />
+    <Material Name="TopMetal23" Type="Conductor" Conductivity="30300000.0" Color="ff8000" />
+    <Material Name="TopVia23" Type="Conductor" Conductivity="3143000.0" Color="ff8000" />
+    <Material Name="TopVia13" Type="Conductor" Conductivity="2191000.0" Color="ffe6bf" />
+    <Material Name="Via43" Type="Conductor" Conductivity="1660000.0" Color="deac5e" />
+    <Material Name="Via32" Type="Conductor" Conductivity="1660000.0" Color="9ba940" />
+    <Material Name="Via22" Type="Conductor" Conductivity="1660000.0" Color="ff3736" />
+    <Material Name="Via12" Type="Conductor" Conductivity="1660000.0" Color="ccccff" />
+    <Material Name="Cont2" Type="Conductor" Conductivity="2390000.0" Color="00ffff" />
+    <Material Name="Passive3" Type="Dielectric" Permittivity="6.6" DielectricLossTangent="0.0" Color="a0a0f0" />
+    <Material Name="SiO23" Type="Dielectric" Permittivity="4.1" DielectricLossTangent="0.0" Color="fffcad" />
+    <Material Name="Substrate3" Type="Semiconductor" Permittivity="11.9" DielectricLossTangent="0" Conductivity="2.0" Color="01e0ff" />
+    <Material Name="EPI2" Type="Semiconductor" Permittivity="11.9" DielectricLossTangent="0" Conductivity="5.0" Color="294fff" />
+    <Material Name="AIR2" Type="Dielectric" Permittivity="1.0" DielectricLossTangent="0.0" Color="d0d0d0" />
+    <Material Name="Vmim2" Type="Conductor" Conductivity="2191000.0" Color="ffe6bf" />
+    <Material Name="MIM2" Type="Conductor" Conductivity="500000.0" Color="e6ffbf" />
+    <Material Name="LOWLOSS2" Type="Conductor" Conductivity="1E10" Color="ff0000" />
+  </Materials>
+  <ELayers LengthUnit="um">
+    <Dielectrics>
+      <Dielectric Name="iPassive" Reference="iSiO2" ReferenceEdge="Top" Material="Passive" Thickness="0.4000" Boundary="1039" />
+      <Dielectric Name="iSiO2" Reference="iSubstrate" ReferenceEdge="Top" Material="SiO2" Thickness="12.2700" Boundary="1039" />
+      <Dielectric Name="iSubstrate" Material="Substrate" Zmin="0.0000" Zmax="80.0000" Boundary="1039" />
+      <Dielectric Name="die1_bondline" Material="Underfill" Reference="iPassive" ReferenceEdge="Top" Thickness="44.0000" Boundary="2000" />
+      <Dielectric Name="Passive" Material="Passive2" Reference="die1_bondline" ReferenceEdge="Top" Thickness="0.4000" Boundary="39" />
+      <Dielectric Name="SiO2" Material="SiO22" Reference="Passive" ReferenceEdge="Top" Thickness="15.7303" Boundary="39" />
+      <Dielectric Name="EPI" Material="EPI" Reference="SiO2" ReferenceEdge="Top" Thickness="3.7500" Boundary="39" />
+      <Dielectric Name="Substrate" Material="Substrate2" Reference="EPI" ReferenceEdge="Top" Thickness="180.0000" Boundary="39" />
+      <Dielectric Name="die2_bondline" Material="Underfill" Reference="iPassive" ReferenceEdge="Top" Thickness="44.0000" Boundary="2100" />
+      <Dielectric Name="Passive2" Material="Passive3" Reference="die2_bondline" ReferenceEdge="Top" Thickness="0.4000" Boundary="2039" />
+      <Dielectric Name="SiO22" Material="SiO23" Reference="Passive2" ReferenceEdge="Top" Thickness="15.7303" Boundary="2039" />
+      <Dielectric Name="EPI2" Material="EPI2" Reference="SiO22" ReferenceEdge="Top" Thickness="3.7500" Boundary="2039" />
+      <Dielectric Name="Substrate2" Material="Substrate3" Reference="EPI2" ReferenceEdge="Top" Thickness="180.0000" Boundary="2039" />
+    </Dielectrics>
+    <Layers>
+      <Layer Name="iTopMetal2" Type="conductor" Reference="iTopVia2" ReferenceEdge="Top" Material="TopMetal2" Layer="1134" Zmin="0.0000" Zmax="3.0000" />
+      <Layer Name="iTopVia2" Type="via" Reference="iTopMetal1" ReferenceEdge="Top" Material="TopVia2" Layer="1133" Zmin="0.0000" Zmax="2.8000" />
+      <Layer Name="iTopMetal1" Type="conductor" Reference="iTopVia1" ReferenceEdge="Top" Material="TopMetal1" Layer="1126" Zmin="0.0000" Zmax="2.0000" />
+      <Layer Name="iTopVia1" Type="via" Reference="iMetal5" ReferenceEdge="Top" Material="TopVia1" Layer="1125" Zmin="0.0000" Zmax="0.8500" />
+      <Layer Name="iMetal5" Type="conductor" Reference="iVia4" ReferenceEdge="Top" Material="Metal5" Layer="1067" Zmin="0.0000" Zmax="0.4900" />
+      <Layer Name="iVia4" Type="via" Reference="iMetal4" ReferenceEdge="Top" Material="Via4" Layer="1066" Zmin="0.0000" Zmax="0.5400" />
+      <Layer Name="iMetal4" Type="conductor" Reference="iSiO2" ReferenceEdge="Bottom" Material="Metal4" Layer="1050" Zmin="0.6000" Zmax="1.0900" />
+      <Layer Name="Interposer_Backside" Type="sheet" Reference="iSubstrate" ReferenceEdge="Bottom" Material="PEC" Layer="900" Zmin="0.0000" Zmax="0.0000" />
+      <Layer Name="die1_CuPillar" Type="VIA" Material="CuPillar" Layer="500" Reference="die1_bondline" ReferenceEdge="Bottom" Zmin="0.0000" Zmax="28.0000" />
+      <Layer Name="die1_SnAgCap" Type="VIA" Material="SnAgSolder" Layer="501" Reference="die1_bondline" ReferenceEdge="Bottom" Zmin="28.0000" Zmax="44.0000" />
+      <Layer Name="TopMetal2" Type="CONDUCTOR" Material="TopMetal22" Layer="134" Reference="SiO2" ReferenceEdge="Bottom" Zmin="1.5000" Zmax="4.5000" />
+      <Layer Name="TopVia2" Type="VIA" Material="TopVia22" Layer="133" Reference="TopMetal2" ReferenceEdge="Top" Zmin="0.0000" Zmax="2.8000" />
+      <Layer Name="TopMetal1" Type="CONDUCTOR" Material="TopMetal12" Layer="126" Reference="TopVia2" ReferenceEdge="Top" Zmin="0.0000" Zmax="2.0000" />
+      <Layer Name="TopVia1" Type="VIA" Material="TopVia12" Layer="125" Reference="TopMetal1" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.8503" />
+      <Layer Name="Vmim" Type="VIA" Material="Vmim" Layer="129" Reference="TopVia1" ReferenceEdge="Top" Zmin="-0.8503" Zmax="-0.1740" />
+      <Layer Name="MIM" Type="CONDUCTOR" Material="MIM" Layer="36" Reference="Vmim" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.1497" />
+      <Layer Name="Metal5" Type="CONDUCTOR" Material="Metal52" Layer="67" Reference="MIM" ReferenceEdge="Top" Zmin="0.0243" Zmax="0.5143" />
+      <Layer Name="Via4" Type="VIA" Material="Via42" Layer="66" Reference="Metal5" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.5400" />
+      <Layer Name="Metal4" Type="CONDUCTOR" Material="Metal42" Layer="50" Reference="Via4" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.4900" />
+      <Layer Name="Via3" Type="VIA" Material="Via3" Layer="49" Reference="Metal4" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.5400" />
+      <Layer Name="Metal3" Type="CONDUCTOR" Material="Metal3" Layer="30" Reference="Via3" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.4900" />
+      <Layer Name="Via2" Type="VIA" Material="Via2" Layer="29" Reference="Metal3" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.5400" />
+      <Layer Name="Metal2" Type="CONDUCTOR" Material="Metal2" Layer="10" Reference="Via2" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.4900" />
+      <Layer Name="Via1" Type="VIA" Material="Via1" Layer="19" Reference="Metal2" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.5400" />
+      <Layer Name="Metal1" Type="CONDUCTOR" Material="Metal1" Layer="8" Reference="Via1" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.4200" />
+      <Layer Name="Cont" Type="VIA" Material="Cont" Layer="6" Reference="Metal1" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.6400" />
+      <Layer Name="Activ" Type="CONDUCTOR" Material="Activ" Layer="1" Reference="Cont" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.4000" />
+      <Layer Name="LBE" Type="DIELECTRIC" Material="AIR" Layer="157" Reference="Activ" ReferenceEdge="Top" Zmin="0.0000" Zmax="183.7500" />
+      <Layer Name="SUBGND" Type="CONDUCTOR" Material="LOWLOSS" Layer="250" Reference="LBE" ReferenceEdge="Top" Zmin="-183.7500" Zmax="-180.0000" />
+      <Layer Name="BACKSIDEGND" Type="CONDUCTOR" Material="LOWLOSS" Layer="251" Reference="SUBGND" ReferenceEdge="Top" Zmin="180.0000" Zmax="186.2500" />
+      <Layer Name="die2_CuPillar" Type="VIA" Material="CuPillar" Layer="500" Reference="die2_bondline" ReferenceEdge="Bottom" Zmin="0.0000" Zmax="28.0000" />
+      <Layer Name="die2_SnAgCap" Type="VIA" Material="SnAgSolder" Layer="501" Reference="die2_bondline" ReferenceEdge="Bottom" Zmin="28.0000" Zmax="44.0000" />
+      <Layer Name="TopMetal22" Type="CONDUCTOR" Material="TopMetal23" Layer="2134" Reference="SiO22" ReferenceEdge="Bottom" Zmin="1.5000" Zmax="4.5000" />
+      <Layer Name="TopVia22" Type="VIA" Material="TopVia23" Layer="2133" Reference="TopMetal22" ReferenceEdge="Top" Zmin="0.0000" Zmax="2.8000" />
+      <Layer Name="TopMetal12" Type="CONDUCTOR" Material="TopMetal13" Layer="2126" Reference="TopVia22" ReferenceEdge="Top" Zmin="0.0000" Zmax="2.0000" />
+      <Layer Name="TopVia12" Type="VIA" Material="TopVia13" Layer="2125" Reference="TopMetal12" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.8503" />
+      <Layer Name="Vmim2" Type="VIA" Material="Vmim2" Layer="2129" Reference="TopVia12" ReferenceEdge="Top" Zmin="-0.8503" Zmax="-0.1740" />
+      <Layer Name="MIM2" Type="CONDUCTOR" Material="MIM2" Layer="2036" Reference="Vmim2" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.1497" />
+      <Layer Name="Metal52" Type="CONDUCTOR" Material="Metal53" Layer="2067" Reference="MIM2" ReferenceEdge="Top" Zmin="0.0243" Zmax="0.5143" />
+      <Layer Name="Via42" Type="VIA" Material="Via43" Layer="2066" Reference="Metal52" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.5400" />
+      <Layer Name="Metal42" Type="CONDUCTOR" Material="Metal43" Layer="2050" Reference="Via42" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.4900" />
+      <Layer Name="Via32" Type="VIA" Material="Via32" Layer="2049" Reference="Metal42" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.5400" />
+      <Layer Name="Metal32" Type="CONDUCTOR" Material="Metal32" Layer="2030" Reference="Via32" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.4900" />
+      <Layer Name="Via22" Type="VIA" Material="Via22" Layer="2029" Reference="Metal32" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.5400" />
+      <Layer Name="Metal22" Type="CONDUCTOR" Material="Metal22" Layer="2010" Reference="Via22" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.4900" />
+      <Layer Name="Via12" Type="VIA" Material="Via12" Layer="2019" Reference="Metal22" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.5400" />
+      <Layer Name="Metal12" Type="CONDUCTOR" Material="Metal12" Layer="2008" Reference="Via12" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.4200" />
+      <Layer Name="Cont2" Type="VIA" Material="Cont2" Layer="2006" Reference="Metal12" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.6400" />
+      <Layer Name="Activ2" Type="CONDUCTOR" Material="Activ2" Layer="2001" Reference="Cont2" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.4000" />
+      <Layer Name="LBE2" Type="DIELECTRIC" Material="AIR2" Layer="2157" Reference="Activ2" ReferenceEdge="Top" Zmin="0.0000" Zmax="183.7500" />
+      <Layer Name="SUBGND2" Type="CONDUCTOR" Material="LOWLOSS2" Layer="2250" Reference="LBE2" ReferenceEdge="Top" Zmin="-183.7500" Zmax="-180.0000" />
+      <Layer Name="BACKSIDEGND2" Type="CONDUCTOR" Material="LOWLOSS2" Layer="2251" Reference="SUBGND2" ReferenceEdge="Top" Zmin="180.0000" Zmax="186.2500" />
+    </Layers>
+  </ELayers>
+</Stackup>

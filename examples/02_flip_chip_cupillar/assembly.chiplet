@@ -1,0 +1,22 @@
+format_version: "1.0"
+
+assembly:
+  name: "SG13G2 die, flip-chip mounted via Cu-pillar bumps"
+  description: "IHP SG13G2 die, mounted face-down onto an IntM4TM2 interposer through a two-layer Cu-pillar/SnAg-cap bump stack (cupillar_opt1)."
+
+technologies:
+  intm4tm2:
+    description: "IHP IntM4TM2 silicon interposer"
+  sg13g2:
+    description: "IHP SG13G2 die"
+
+components:
+  - id: "interposer"
+    type: "interposer"
+    technology: "intm4tm2"
+
+  - id: "die1"
+    type: "die"
+    technology: "sg13g2"
+    orientation: "flip_chip"
+    connection: "cupillar_opt1"

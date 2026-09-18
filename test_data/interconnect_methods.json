@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "description": "chiplet_xml_composer test fixture - a small, project-specific interconnect method registry (not IHP's own interconnect_methods.json). cupillar_opt1 mirrors the real IHP SG13G2 Cu-pillar UBM option (PacTech, Table 6.1 Option 1: 35 um opening, 44 um body diameter, 28 um Cu pillar + 16 um SnAg cap) documented in https://github.com/IHP-GmbH/chiplet-spec/blob/dev/examples/interconnect_methods.json - GDS layer numbers here are illustrative, not the real IHP-assigned ones.",
+
+  "layer_registry": {
+    "CuPillar": {"gds_layer": 500, "gds_datatype": 35, "material": "CuPillar", "purpose": "Cu pillar body"},
+    "SnAgCap": {"gds_layer": 501, "gds_datatype": 35, "material": "SnAgSolder", "purpose": "SnAg solder cap"}
+  },
+
+  "methods": {
+    "cupillar_opt1": {
+      "description": "PacTech Cu pillar, Table 6.1 Option 1 (35 um opening)",
+      "connection_stack": {
+        "layers": [
+          {"name": "CuPillar", "material": "CuPillar", "height": 28.0, "diameter": 44.0},
+          {"name": "SnAgCap", "material": "SnAgSolder", "height": 16.0, "diameter": 44.0}
+        ]
+      }
+    }
+  }
+}
