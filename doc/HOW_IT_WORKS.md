@@ -385,6 +385,12 @@ for each die component (in .chiplet components[] order):
         total_height = sum(layer.height for layer in stack)
         if total_height > 0:
             boundary = boundary_layer_map[die.id]            # KeyError -> ComposeError
+            if connection_materials is None:                 # loaded lazily, only here - a
+                                                               # connection_stack resolving to
+                                                               # zero height never reaches this
+                                                               # line and never needs the file
+                if connection_materials_path is None: raise ComposeError
+                connection_materials = load(connection_materials_path)
             ensure_connection_material(bondline_material)    # see below; ComposeError on collision
                                                                # or missing --connection-materials entry
             bondline = new Dielectric(Reference=current_ref, ReferenceEdge="Top",
@@ -445,7 +451,7 @@ return base_root (as an ElementTree)
 | Bondline construction | `total_height > 0` and `boundary_layer_map` has no entry for `component.id` |
 | Pad-to-pad anchor lookup | `--attach`'s target isn't a real `<Dielectric>` in the interposer's own stackup, or either `topmost_metal()`/`bottommost_metal()` finds zero non-sheet metals in the interposer's or this die's own stackup |
 | Connection-material check (bondline and each via layer) | the named material has no entry in `connection_materials["materials"]`, or it collides with a same-named `<Material>` already present from a `--stackup` input |
-| `--connection-materials` requirement (once, before the loop) | any component declares a non-empty `connection` and `--connection-materials` was not given |
+| `--connection-materials` requirement (lazy - first time any component's own `connection_stack` resolves to nonzero height) | `--connection-materials` was not given. **Not** raised just because some component declares `connection:` - a zero-height one never reaches this check. |
 | Component selection (once, before the loop) | `components[]` has zero or 2+ entries with `type == "interposer"` |
 
 Nothing else in the pipeline raises `ComposeError` - nested XML/YAML/JSON structural problems

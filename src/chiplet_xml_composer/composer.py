@@ -565,12 +565,14 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
       interconnect_methods_path (string, optional): path to interconnect_methods.json -
         required if any die component declares a `connection:`
       connection_materials_path (string, optional): path to a --connection-materials sidecar
-        JSON file (see test_data/connection_materials.json) - required under the same condition
-        as interconnect_methods_path. Supplies electrical/thermal properties for every
-        connection_stack layer's material and for bondline_material below - these are never
-        looked up in an input stackup XML, since they are not physically part of either piece
-        being joined, and neither the .chiplet file nor a real interconnect_methods.json carries
-        this data at all.
+        JSON file (see test_data/connection_materials.json) - required only once some
+        component's own connection_stack actually resolves to nonzero total height (not merely
+        whenever connection: is used - a named, zero-height connection_stack creates no
+        bondline and never reads this file at all). Supplies electrical/thermal properties for
+        every connection_stack layer's material and for bondline_material below - these are
+        never looked up in an input stackup XML, since they are not physically part of either
+        piece being joined, and neither the .chiplet file nor a real interconnect_methods.json
+        carries this data at all.
       attach_map (dict, optional): component id -> Dielectric name in the interposer's own
         stackup XML that this component attaches to. Every die component must have an entry.
       boundary_layer_map (dict, optional): component id -> GDS layer number to restrict that
@@ -604,15 +606,14 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
       raise ComposeError(
           'At least one component declares connection:, but no --interconnect-methods was '
           'given - it is required whenever any component uses connection: (a GDS layer number '
-          'for a connection_stack layer is never available from the .chiplet file alone)')
+          'for a connection_stack layer is never available from the .chiplet file alone, and '
+          'nothing else can even tell whether that connection_stack has zero or nonzero height)')
     interconnect_methods = _load_interconnect_methods(interconnect_methods_path)
-    if connection_materials_path is None:
-      raise ComposeError(
-          'At least one component declares connection:, but no --connection-materials was '
-          'given - it is required whenever any component uses connection: (electrical '
-          'properties for a connection_stack layer\'s material are never available from the '
-          '.chiplet file or interconnect_methods.json alone)')
-    connection_materials = _load_connection_materials(connection_materials_path)
+    # --connection-materials is loaded lazily below, the first time some component's own
+    # connection_stack actually resolves to nonzero height - not every connection: id does (a
+    # named, zero-height "direct bond via this method" is valid and creates no bondline at all,
+    # per HOW_IT_WORKS.md), and connection_materials is never read for one that doesn't, so
+    # requiring the file unconditionally here would reject a valid assembly that never needs it
 
   def stackup_path_for (component):
     tech = component.get("technology")
@@ -690,6 +691,15 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
               f'Component "{component_id}" needs a bridging Dielectric (connection: '
               f'"{connection_id}" has nonzero height) but has no --boundary-layer mapping for '
               f'its Boundary= GDS layer number')
+        if connection_materials is None:
+          if connection_materials_path is None:
+            raise ComposeError(
+                f'Component "{component_id}" needs a bridging Dielectric (connection: '
+                f'"{connection_id}" has nonzero height) but no --connection-materials was given '
+                f'- it is required whenever some component\'s connection_stack has nonzero '
+                f'height (electrical properties for a connection_stack layer\'s material are '
+                f'never available from the .chiplet file or interconnect_methods.json alone)')
+          connection_materials = _load_connection_materials(connection_materials_path)
         _ensure_connection_material(base_materials_el, renamer, connection_materials,
                                      added_connection_material_names, bondline_material,
                                      f'component "{component_id}"\'s bridging Dielectric')
@@ -882,10 +892,10 @@ def main (argv=None):
                             "declares connection:")
   parser.add_argument("--connection-materials", default=None,
                        help="path to a --connection-materials sidecar JSON file (see "
-                            "test_data/connection_materials.json) - required under the same "
-                            "condition as --interconnect-methods; supplies electrical/thermal "
-                            "properties for connection_stack layer materials and for "
-                            "--bondline-material, since neither the .chiplet file nor "
+                            "test_data/connection_materials.json) - required once some "
+                            "component's connection_stack resolves to nonzero height; supplies "
+                            "electrical/thermal properties for connection_stack layer materials "
+                            "and for --bondline-material, since neither the .chiplet file nor "
                             "interconnect_methods.json carries these")
   parser.add_argument("--bondline-material", default="Underfill",
                        help='Material name for each bridging Dielectric, looked up in '

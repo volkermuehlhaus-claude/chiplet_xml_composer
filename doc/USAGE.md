@@ -64,7 +64,7 @@ chiplet_xml_composer --chiplet-file FILE --stackup TECH=PATH [--stackup TECH=PAT
 | `--stackup` | yes, one per technology used | yes | `TECH=PATH`. Maps a `.chiplet` `technology:` id to your own gds2palace stackup XML file. This tool never reads the `.chiplet` file's own `technology.stackup` field. That field uses a different YAML schema. See [`CHIPLET_FORMAT.md`](CHIPLET_FORMAT.md). |
 | `--attach` | yes, one per die component | yes | `COMPONENT_ID=DIELECTRIC`. Names the Dielectric in the interposer's own stackup XML that this die attaches to. Example: `die1=iPassive`. |
 | `--interconnect-methods` | only if any component declares `connection:` | no | Path to an `interconnect_methods.json` registry. Required whenever a die has a `connection:`. The `.chiplet` file alone never gives a GDS layer number for a bump or pillar layer. See [`CHIPLET_FORMAT.md`](CHIPLET_FORMAT.md). |
-| `--connection-materials` | only if any component declares `connection:` | no | Path to a `--connection-materials` sidecar JSON file. Required under the same condition as `--interconnect-methods`. Supplies electrical/thermal properties for every `connection_stack` layer's material and for `--bondline-material`. Neither the `.chiplet` file nor `interconnect_methods.json` carries these properties. See [`CHIPLET_FORMAT.md`](CHIPLET_FORMAT.md). |
+| `--connection-materials` | only if some component's `connection_stack` resolves to nonzero total height | no | Path to a `--connection-materials` sidecar JSON file. Not required just because `connection:` is used - a named, zero-height `connection_stack` creates no bondline and never reads this file. Supplies electrical/thermal properties for every `connection_stack` layer's material and for `--bondline-material`. Neither the `.chiplet` file nor `interconnect_methods.json` carries these properties. See [`CHIPLET_FORMAT.md`](CHIPLET_FORMAT.md). |
 | `--boundary-layer` | only for a die that gets a bridging Dielectric | yes | `COMPONENT_ID=GDSLAYER`. Sets the GDS layer number for that die's bridging Dielectric, also called the bondline. Its `Boundary=` attribute uses this number. Needed whenever `connection:` resolves to a nonzero total height. That means a real bump/pillar stack, not a direct bond. |
 | `--bondline-material` | no | no | Material name for every bridging Dielectric this run creates. Default `"Underfill"`. Looked up in `--connection-materials`. See [Error messages](#error-messages-you-might-see). |
 | `-o`, `--output` | yes | no | Path to write the combined stackup XML to. |
@@ -403,7 +403,7 @@ try:
         stackup_map={"intm4tm2": "interposer_IntM4TM2.xml", "sg13g2": "SG13G2_die.xml"},
         attach_map={"die1": "iPassive"},
         interconnect_methods_path="interconnect_methods.json",   # only if any connection: is used
-        connection_materials_path="connection_materials.json",   # required under the same condition
+        connection_materials_path="connection_materials.json",   # only if a connection_stack resolves nonzero
         boundary_layer_map={"die1": 2000},                       # only for dies with a bondline
         bondline_material="Underfill",                            # optional, this is the default
     )
@@ -428,9 +428,14 @@ with status 1. Each message names exactly what's missing:
 - `"Component "X" has no --attach mapping"` - add `--attach X=<dielectric-name>`. Name a real
   `<Dielectric Name="...">` in the interposer's own stackup XML.
 - `"At least one component declares connection:, but no --interconnect-methods was given"` -
-  add `--interconnect-methods path/to/interconnect_methods.json`.
-- `"At least one component declares connection:, but no --connection-materials was given"` -
-  add `--connection-materials path/to/connection_materials.json`. See
+  add `--interconnect-methods path/to/interconnect_methods.json`. Required as soon as any
+  component uses `connection:` at all, even one that turns out to resolve to zero height -
+  nothing else can tell you that without this file.
+- `"Component "X" needs a bridging Dielectric ... but no --connection-materials was given"` -
+  add `--connection-materials path/to/connection_materials.json`. Unlike
+  `--interconnect-methods`, this one is only required once some component's own
+  `connection_stack` actually resolves to nonzero height - naming a zero-height `connection:`
+  method needs `--interconnect-methods` to resolve, but never touches this file. See
   [`CHIPLET_FORMAT.md`](CHIPLET_FORMAT.md) for the file's shape and why it's separate from
   `interconnect_methods.json`.
 - `"connection: "X" is not a known method in this interconnect_methods.json"` - check the
@@ -496,15 +501,18 @@ decision procedure.
    - Present: you need an `interconnect_methods.json` file path (`--interconnect-methods`,
      passed once, shared across all dies) whose `methods` map contains that `connection:` id,
      and whose `layer_registry` map has an entry (with `gds_layer`) for every name in that
-     method's `connection_stack.layers[]`. You also need a `--connection-materials` sidecar
-     path (see step 6) under the same condition. If the resolved `connection_stack` has nonzero
-     total height, that die also needs `--boundary-layer COMPONENT_ID=<gds-layer-number>` - a
-     value that must come from the caller (nothing in either input file names it; see
-     [`CHIPLET_FORMAT.md`](CHIPLET_FORMAT.md#not-read-missing-information) for why). A nonzero
-     total height also needs a real, non-`Type="sheet"` conductor `<Layer>` somewhere in the
-     interposer's own stackup, and another in this die's own stackup - the connection stack
-     anchors its two outer ends to the real pad metal on each side, not to a Dielectric edge.
-     See [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#connection-stack-pad-to-pad-anchoring).
+     method's `connection_stack.layers[]`. `--interconnect-methods` is required as soon as
+     `connection:` is used at all, even for one that turns out to resolve to zero height -
+     nothing else can tell you that. If (and only if) the resolved `connection_stack` has
+     nonzero total height, that die also needs `--boundary-layer COMPONENT_ID=<gds-layer-number>`
+     - a value that must come from the caller (nothing in either input file names it; see
+     [`CHIPLET_FORMAT.md`](CHIPLET_FORMAT.md#not-read-missing-information) for why) - and a
+     `--connection-materials` sidecar path (see step 6; unlike `--interconnect-methods`, this one
+     is *not* needed for a connection: that resolves to zero height). A nonzero total height also
+     needs a real, non-`Type="sheet"` conductor `<Layer>` somewhere in the interposer's own
+     stackup, and another in this die's own stackup - the connection stack anchors its two outer
+     ends to the real pad metal on each side, not to a Dielectric edge. See
+     [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#connection-stack-pad-to-pad-anchoring).
 5. **Check `orientation:`** on each die. `flip_chip` mirrors that die's own z-stack around its
    own current topmost surface. If its stackup XML has an outer `AIR` Dielectric (topmost or
    bottommost by resolved z), that's stripped first and the surface under it becomes the pivot;
@@ -534,7 +542,7 @@ decision procedure.
 --stackup <technology_id>=<path>               (one per distinct technology used)
 --attach <component_id>=<dielectric_name>      (one per die/die_array component)
 --interconnect-methods <path>                  (zero or one; required iff any connection: is used)
---connection-materials <path>                  (zero or one; required iff any connection: is used)
+--connection-materials <path>                  (zero or one; required iff some connection_stack resolves nonzero)
 --boundary-layer <component_id>=<gds_layer>    (one per die whose connection_stack has nonzero height)
 --bondline-material <name>                     (zero or one; default "Underfill")
 -o <path>                                       (exactly one)

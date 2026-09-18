@@ -219,11 +219,15 @@ declares a non-empty `connection`.
 3. For each `die`/`die_array` component: do you have an attachment Dielectric name for it? (Not
    in the file - external knowledge or a question back to the requester.)
 4. For each `die`/`die_array` component with a non-empty `connection`: do you have
-   `interconnect_methods.json`, does its `methods` map contain that id, does every one of that
-   method's `connection_stack.layers[].name` appear in `layer_registry` with a `gds_layer`, and
-   do you have a `--boundary-layer` value for that component? (The last one is never in either
-   file - external knowledge or a question back to the requester.)
-5. For each connection_stack layer's `material`, and for `--bondline-material` (default
-   `"Underfill"`): do you have a `--connection-materials` file, and does it define that name
-   under `materials`? (A same-named `<Material>` already present in a `--stackup` XML does **not**
-   satisfy this - that's a collision, `ComposeError`.)
+   `interconnect_methods.json`, does its `methods` map contain that id, and does every one of
+   that method's `connection_stack.layers[].name` appear in `layer_registry` with a `gds_layer`?
+   This much is needed unconditionally - even a `connection:` that turns out to resolve to zero
+   total height needs `interconnect_methods.json` to determine that.
+5. Sum that method's resolved `connection_stack.layers[].height`. If, and only if, that total is
+   nonzero: do you have a `--boundary-layer` value for that component (never in either file -
+   external knowledge or a question back to the requester), and for each connection_stack
+   layer's `material` plus `--bondline-material` (default `"Underfill"`), do you have a
+   `--connection-materials` file that defines that name under `materials`? (A same-named
+   `<Material>` already present in a `--stackup` XML does **not** satisfy this - that's a
+   collision, `ComposeError`.) A zero-height `connection:` needs neither `--boundary-layer` nor
+   `--connection-materials` - no bondline is ever created for it.
