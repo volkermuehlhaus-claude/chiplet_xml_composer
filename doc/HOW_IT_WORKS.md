@@ -49,9 +49,13 @@ Here is what happens for each die:
    offset. Reversing the die's own internal dielectric build order is a physical necessity.
    This tool has to handle it itself.
 
-   The pivot is the surface step 2 just exposed. That is whichever end used to touch the
-   removed AIR. Mirroring `[zmin, zmax]` for every Dielectric and every Layer around that one
-   z-value preserves every element's own thickness exactly. It also flips which end is "up."
+   The pivot is this stack's own current topmost surface, after step 2. If that die had an
+   outer AIR dielectric, step 2 already removed it, so this is whichever real dielectric used to
+   sit right under it. If the die never had one, this is simply that die's own real outermost
+   dielectric - the same surface either way. An outer AIR dielectric was never required to
+   exist for this to work; step 2 only removes one *if* present. Mirroring `[zmin, zmax]` for
+   every Dielectric and every Layer around that one z-value preserves every element's own
+   thickness exactly. It also flips which end is "up."
 
 4. **Build the bridging Dielectric and via Layer(s)**, if `connection:` is set and resolves to a
    nonzero-height stack.
@@ -141,9 +145,10 @@ For a pivot `P`:
 This preserves `thickness` exactly, since `new_zmax - new_zmin` equals `old_zmax - old_zmin`. It
 reverses which element ends up nearest `P`.
 
-`P` itself is the resolved z of whichever surface step 2's AIR removal exposed. That is the
-die's own new topmost or bottommost Dielectric. The confirmed convention treats this as the
-die's physical attach or bond surface.
+`P` itself is the resolved z of this stack's own current topmost or bottommost Dielectric, after
+step 2's AIR-stripping. The confirmed convention treats this as the die's physical attach or
+bond surface - whether or not an outer AIR dielectric ever existed there to strip. See step 3
+above.
 
 Mirroring around that surface has a useful side effect. The die's own first remaining
 Dielectric lands with its `zmin` exactly at the pivot. In the `SG13G2_die.xml` fixture, that
@@ -360,12 +365,13 @@ for each die component (in .chiplet components[] order):
     chip_root = parse(stackup_map[die.technology])
     (materials, dielectrics, metals) = parse_substrate(chip_root)
 
-    stripped = strip_outer_air_dielectrics(dielectrics)
+    strip_outer_air_dielectrics(dielectrics)
     # removes dielectrics.dielectrics entries where (is_top or is_bottom) and material == "AIR"
-    # no-op (empty list returned) if none qualify
+    # no-op if none qualify - an outer AIR dielectric was never required to exist, only removed
+    # if present, so the flip_chip branch below never checks or depends on this having done
+    # anything
 
     if die.orientation == "flip_chip":
-        if not stripped: raise ComposeError               # no exposed pivot surface
         pivot = max(d.zmax for d in dielectrics.dielectrics)
         reverse_stackup_z_order(dielectrics, metals, pivot)
         # new_zmin = 2*pivot - old_zmax ; new_zmax = 2*pivot - old_zmin, for every
@@ -435,7 +441,6 @@ return base_root (as an ElementTree)
 |---|---|
 | Technology lookup (any component) | `stackup_map` has no entry for `component.technology` |
 | Attach lookup (each die) | `attach_map` has no entry for `component.id` |
-| `flip_chip` handling | `strip_outer_air_dielectrics()` returned `[]` (no AIR found to expose a pivot) |
 | `connection:` resolution | `die.connection` not in `interconnect_methods["methods"]`, or a `connection_stack` layer name not in `interconnect_methods["layer_registry"]` |
 | Bondline construction | `total_height > 0` and `boundary_layer_map` has no entry for `component.id` |
 | Pad-to-pad anchor lookup | `--attach`'s target isn't a real `<Dielectric>` in the interposer's own stackup, or either `topmost_metal()`/`bottommost_metal()` finds zero non-sheet metals in the interposer's or this die's own stackup |

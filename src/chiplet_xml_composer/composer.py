@@ -657,19 +657,16 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
 
     # ---- read and preprocess this chiplet's own resolved stackup ----
     _, chip_dielectrics, chip_metals = stackup_reader.parse_substrate(chip_root)
-    stripped = strip_outer_air_dielectrics(chip_dielectrics)
+    strip_outer_air_dielectrics(chip_dielectrics)
 
     orientation = die.get("orientation", "face_up")
     if orientation == "flip_chip":
-      if not stripped:
-        raise ComposeError(
-            f'Component "{component_id}" is orientation: flip_chip, but its stackup has no '
-            f'outer AIR dielectric to expose an attach surface - cannot determine the pivot '
-            f'for reverse_stackup_z_order(). Add an AIR dielectric at the die\'s own bond-pad '
-            f'surface, or attach this component as face_up instead.')
-      # pivot at the surface strip_outer_air_dielectrics() just exposed (whichever end used to
-      # touch the removed AIR) - the die's own attach/bond surface. Prefer the new topmost
-      # resolved z (the common case: AIR sat above the metal stack, as in gpdk180.xml).
+      # pivot at this stack's own current topmost surface. If it had an outer AIR dielectric,
+      # the line above already removed it, so this is the real dielectric that used to sit
+      # right under that AIR - the die's own attach/bond surface. If it never had one, this is
+      # simply that die's own real outermost dielectric, which is exactly the same surface -
+      # AIR was never required to exist for this pivot to be correct, only to be removed *if*
+      # present, so nothing about this flip depends on the outcome of the line above.
       pivot_z = max(d.zmax for d in chip_dielectrics.dielectrics)
       reverse_stackup_z_order(chip_dielectrics, chip_metals, pivot_z)
 

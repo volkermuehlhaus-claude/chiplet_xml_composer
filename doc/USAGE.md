@@ -458,10 +458,6 @@ with status 1. Each message names exactly what's missing:
   stackup XML"` - a `--stackup` input file already defines a `<Material Name="X">` of its own.
   Rename one of them - either the entry in `--connection-materials`, or the one in the stackup
   XML.
-- `"Component "X" is orientation: flip_chip, but its stackup has no outer AIR dielectric"` -
-  flip-chip mirroring pivots on the surface an outer `AIR` dielectric is stripped from. See
-  [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#flip-chip-z-reversal). Add an `AIR` dielectric to that
-  die's own stackup XML. Or drop `orientation: flip_chip` if the die really does mount face-up.
 - `"Expected exactly one component with type: interposer, found N"` - v1 supports exactly one
   shared interposer per assembly. See
   [`CHIPLET_FORMAT.md`](CHIPLET_FORMAT.md#not-read-out-of-scope-for-v1).
@@ -509,12 +505,12 @@ decision procedure.
      interposer's own stackup, and another in this die's own stackup - the connection stack
      anchors its two outer ends to the real pad metal on each side, not to a Dielectric edge.
      See [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#connection-stack-pad-to-pad-anchoring).
-5. **Check `orientation:`** on each die. `flip_chip` requires that die's own stackup XML to have
-   an outer `AIR` Dielectric (topmost or bottommost by resolved z) - if you can, verify this by
-   reading the die's stackup XML directly (look for a `<Dielectric ... Material="AIR" />` or one
-   resolving to the built-in AIR material) before invoking, since the tool's own error message
-   for this case is a hard failure, not a fallback. Any other value (or absent) needs nothing
-   extra.
+5. **Check `orientation:`** on each die. `flip_chip` mirrors that die's own z-stack around its
+   own current topmost surface. If its stackup XML has an outer `AIR` Dielectric (topmost or
+   bottommost by resolved z), that's stripped first and the surface under it becomes the pivot;
+   if it doesn't, the die's own real outermost Dielectric is the pivot instead - either way
+   works, no `AIR` Dielectric is required. Any other `orientation:` value (or absent) needs
+   nothing extra.
 6. **Every Material a `connection_stack` layer names, and `--bondline-material` (default
    `"Underfill"`), must have an entry in the `--connection-materials` sidecar's `"materials"`
    map - never in a `--stackup` input file.** These materials are not physically part of either
