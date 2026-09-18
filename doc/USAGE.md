@@ -52,6 +52,7 @@ pinned commit of [IHP-GmbH/chiplet-spec](https://github.com/IHP-GmbH/chiplet-spe
 chiplet_xml_composer --chiplet-file FILE --stackup TECH=PATH [--stackup TECH=PATH ...]
                       --attach COMPONENT_ID=DIELECTRIC [--attach COMPONENT_ID=DIELECTRIC ...]
                       [--interconnect-methods FILE]
+                      [--connection-materials FILE]
                       [--boundary-layer COMPONENT_ID=GDSLAYER ...]
                       [--bondline-material NAME]
                       -o OUTPUT.xml
@@ -63,8 +64,9 @@ chiplet_xml_composer --chiplet-file FILE --stackup TECH=PATH [--stackup TECH=PAT
 | `--stackup` | yes, one per technology used | yes | `TECH=PATH`. Maps a `.chiplet` `technology:` id to your own gds2palace stackup XML file. This tool never reads the `.chiplet` file's own `technology.stackup` field. That field uses a different YAML schema. See [`CHIPLET_FORMAT.md`](CHIPLET_FORMAT.md). |
 | `--attach` | yes, one per die component | yes | `COMPONENT_ID=DIELECTRIC`. Names the Dielectric in the interposer's own stackup XML that this die attaches to. Example: `die1=iPassive`. |
 | `--interconnect-methods` | only if any component declares `connection:` | no | Path to an `interconnect_methods.json` registry. Required whenever a die has a `connection:`. The `.chiplet` file alone never gives a GDS layer number for a bump or pillar layer. See [`CHIPLET_FORMAT.md`](CHIPLET_FORMAT.md). |
+| `--connection-materials` | only if any component declares `connection:` | no | Path to a `--connection-materials` sidecar JSON file. Required under the same condition as `--interconnect-methods`. Supplies electrical/thermal properties for every `connection_stack` layer's material and for `--bondline-material`. Neither the `.chiplet` file nor `interconnect_methods.json` carries these properties. See [`CHIPLET_FORMAT.md`](CHIPLET_FORMAT.md). |
 | `--boundary-layer` | only for a die that gets a bridging Dielectric | yes | `COMPONENT_ID=GDSLAYER`. Sets the GDS layer number for that die's bridging Dielectric, also called the bondline. Its `Boundary=` attribute uses this number. Needed whenever `connection:` resolves to a nonzero total height. That means a real bump/pillar stack, not a direct bond. |
-| `--bondline-material` | no | no | Material name for every bridging Dielectric this run creates. Default `"Underfill"`. Must already be defined as a `<Material>` in one of the input stackup XML files. See [Error messages](#error-messages-you-might-see). |
+| `--bondline-material` | no | no | Material name for every bridging Dielectric this run creates. Default `"Underfill"`. Looked up in `--connection-materials`. See [Error messages](#error-messages-you-might-see). |
 | `-o`, `--output` | yes | no | Path to write the combined stackup XML to. |
 
 `--stackup`, `--attach`, and `--boundary-layer` are all repeatable `KEY=VALUE` flags. Pass one
@@ -148,7 +150,8 @@ silicon, ends up right against the interposer, since nothing flipped it.
 
 This example mounts the die face-down, using `orientation: flip_chip`. The die bonds through a
 real two-layer bump stack, using `connection: cupillar_opt1`. This setup needs
-`--interconnect-methods` and `--boundary-layer`, in addition to `--attach`.
+`--interconnect-methods`, `--connection-materials`, and `--boundary-layer`, in addition to
+`--attach`.
 
 [`examples/02_flip_chip_cupillar/assembly.chiplet`](../examples/02_flip_chip_cupillar/assembly.chiplet):
 
@@ -177,7 +180,9 @@ components:
 ```
 
 `test_data/interconnect_methods.json` defines `cupillar_opt1`. It mirrors a real IHP SG13G2
-Cu-pillar option: a 28 um Cu pillar plus a 16 um SnAg solder cap, 44 um total:
+Cu-pillar option: a 28 um Cu pillar plus a 16 um SnAg solder cap, 44 um total. This file stays
+close to the shape of IHP's own real `interconnect_methods.json` - it only ever *names* a
+material (`"material": "CuPillar"`), it never gives one electrical properties:
 
 ```json
 {
@@ -198,6 +203,35 @@ Cu-pillar option: a 28 um Cu pillar plus a 16 um SnAg solder cap, 44 um total:
 }
 ```
 
+Electrical properties for `CuPillar`, `SnAgSolder`, and the bondline's own `Underfill` material
+come from a second file, `test_data/connection_materials.json`. This file has no counterpart in
+the real `.chiplet`/`interconnect_methods.json` ecosystem - it exists only because
+`chiplet_xml_composer` refuses to invent a material property, and neither of the other two files
+carries one. Every value in it is sourced, not guessed - see the `"source"` field on each entry:
+
+```json
+{
+  "materials": {
+    "CuPillar": {
+      "type": "Conductor",
+      "conductivity": 59600000.0,
+      "source": "Bulk copper conductivity (1.68 uOhm*cm) - a standard physical reference value."
+    },
+    "SnAgSolder": {
+      "type": "Conductor",
+      "conductivity": 7400000.0,
+      "source": "Published SAC305 solder resistivity, 13.0-14.5 uOhm*cm."
+    },
+    "Underfill": {
+      "type": "Dielectric",
+      "permittivity": 3.5,
+      "dielectric_loss_tangent": 0.018,
+      "source": "Typical epoxy flip-chip underfill: dielectric constant ~3.5-3.8, loss tangent ~0.018-0.02."
+    }
+  }
+}
+```
+
 ```bash
 chiplet_xml_composer \
     --chiplet-file examples/02_flip_chip_cupillar/assembly.chiplet \
@@ -205,6 +239,7 @@ chiplet_xml_composer \
     --stackup sg13g2=test_data/SG13G2_die.xml \
     --attach die1=iPassive \
     --interconnect-methods test_data/interconnect_methods.json \
+    --connection-materials test_data/connection_materials.json \
     --boundary-layer die1=2000 \
     -o examples/02_flip_chip_cupillar/combined.xml
 ```
@@ -227,6 +262,9 @@ to see the result. Bottom to top, right above the interposer's own `iPassive`, y
   `--boundary-layer`. This is the interconnect stack's total height: 28 + 16 um.
 - `die1_CuPillar` and `die1_SnAgCap`, two new `<Layer Type="VIA">` elements, on GDS layers 500
   and 501. Both are embedded within `die1_bondline`'s own z-range, not stacked above it.
+- In `<Materials>`, one new `Underfill`, `CuPillar`, and `SnAgSolder` entry each - synthesized
+  from `connection_materials.json`, with the properties shown above. Neither
+  `interposer_IntM4TM2.xml` nor `SG13G2_die.xml` defines any of these three.
 - The die's own dielectrics, reversed: `Passive` now sits right on top of the bondline, since it
   was the die's own outermost Dielectric next to the stripped `AIR`. `SiO2`, `EPI`, and
   `Substrate` follow, in that order - `Substrate`, the bulk silicon, now ends up farthest from
@@ -265,6 +303,7 @@ chiplet_xml_composer \
     --stackup sg13g2=test_data/SG13G2_die.xml \
     --attach die1=iPassive --attach die2=iPassive \
     --interconnect-methods test_data/interconnect_methods.json \
+    --connection-materials test_data/connection_materials.json \
     --boundary-layer die1=2000 --boundary-layer die2=2100 \
     -o examples/03_two_dies/combined.xml
 ```
@@ -299,6 +338,11 @@ not technology-arbitrary ones. See
 [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#namegds-layer-collision-avoidance) for why they don't need
 disambiguating.
 
+The `CuPillar`, `SnAgSolder`, and `Underfill` `<Material>` entries are shared the same way -
+`chiplet_xml_composer` adds each one once, the first time either die needs it, and reuses it for
+the second die rather than creating a renamed duplicate. Open the combined file and confirm it
+for yourself: exactly one `<Material Name="CuPillar">`, not two.
+
 ### Python API
 
 ```python
@@ -310,6 +354,7 @@ try:
         stackup_map={"intm4tm2": "interposer_IntM4TM2.xml", "sg13g2": "SG13G2_die.xml"},
         attach_map={"die1": "iPassive"},
         interconnect_methods_path="interconnect_methods.json",   # only if any connection: is used
+        connection_materials_path="connection_materials.json",   # required under the same condition
         boundary_layer_map={"die1": 2000},                       # only for dies with a bondline
         bondline_material="Underfill",                            # optional, this is the default
     )
@@ -335,6 +380,10 @@ with status 1. Each message names exactly what's missing:
   `<Dielectric Name="...">` in the interposer's own stackup XML.
 - `"At least one component declares connection:, but no --interconnect-methods was given"` -
   add `--interconnect-methods path/to/interconnect_methods.json`.
+- `"At least one component declares connection:, but no --connection-materials was given"` -
+  add `--connection-materials path/to/connection_materials.json`. See
+  [`CHIPLET_FORMAT.md`](CHIPLET_FORMAT.md) for the file's shape and why it's separate from
+  `interconnect_methods.json`.
 - `"connection: "X" is not a known method in this interconnect_methods.json"` - check the
   `methods` map in your `interconnect_methods.json`. Confirm the exact id spelling.
 - `"connection_stack layer "X" ... has no entry in this interconnect_methods.json's
@@ -344,10 +393,14 @@ with status 1. Each message names exactly what's missing:
   `--boundary-layer X=<gds-layer-number>`. This is only required when the resolved
   `connection_stack` has nonzero total height. A direct, zero-height bond needs no bondline and
   no boundary layer.
-- `"Material "X" ... is not defined as a <Material> in any input stackup XML"` -
+- `"Material "X" ... has no entry in this --connection-materials file's "materials" map"` -
   `chiplet_xml_composer` never invents electrical or thermal material properties. Add a
-  `<Material Name="X" .../>` to one of your input stackup XML files. Give it real
-  `Conductivity`/`Permittivity` values.
+  `"X": {"type": "Conductor", "conductivity": ...}` (or `"Dielectric"`/`"permittivity"`) entry
+  to your `--connection-materials` file's `"materials"` map.
+- `"Material "X" ... collides with a Material of the same name already defined in an input
+  stackup XML"` - a `--stackup` input file already defines a `<Material Name="X">` of its own.
+  Rename one of them - either the entry in `--connection-materials`, or the one in the stackup
+  XML.
 - `"Component "X" is orientation: flip_chip, but its stackup has no outer AIR dielectric"` -
   flip-chip mirroring pivots on the surface an outer `AIR` dielectric is stripped from. See
   [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#flip-chip-z-reversal). Add an `AIR` dielectric to that
@@ -385,14 +438,15 @@ decision procedure.
    The `.chiplet` file itself does not name this (v1 has no XY placement to derive it from) - it
    must come from the same source as the stackup mapping (caller-supplied, or ask).
 4. **Check every die component's `connection:` field.**
-   - Absent or empty: no `--interconnect-methods`/`--boundary-layer` needed for that die - it
-     bonds directly to its `--attach` target.
+   - Absent or empty: no `--interconnect-methods`/`--connection-materials`/`--boundary-layer`
+     needed for that die - it bonds directly to its `--attach` target.
    - Present: you need an `interconnect_methods.json` file path (`--interconnect-methods`,
      passed once, shared across all dies) whose `methods` map contains that `connection:` id,
      and whose `layer_registry` map has an entry (with `gds_layer`) for every name in that
-     method's `connection_stack.layers[]`. If the resolved `connection_stack` has nonzero total
-     height, that die also needs `--boundary-layer COMPONENT_ID=<gds-layer-number>` - a value
-     that must come from the caller (nothing in either input file names it; see
+     method's `connection_stack.layers[]`. You also need a `--connection-materials` sidecar
+     path (see step 6) under the same condition. If the resolved `connection_stack` has nonzero
+     total height, that die also needs `--boundary-layer COMPONENT_ID=<gds-layer-number>` - a
+     value that must come from the caller (nothing in either input file names it; see
      [`CHIPLET_FORMAT.md`](CHIPLET_FORMAT.md#not-read-missing-information) for why).
 5. **Check `orientation:`** on each die. `flip_chip` requires that die's own stackup XML to have
    an outer `AIR` Dielectric (topmost or bottommost by resolved z) - if you can, verify this by
@@ -401,13 +455,20 @@ decision procedure.
    for this case is a hard failure, not a fallback. Any other value (or absent) needs nothing
    extra.
 6. **Every Material a `connection_stack` layer names, and `--bondline-material` (default
-   `"Underfill"`), must already exist as a `<Material Name="...">` in at least one of the
-   `--stackup` input files.** If you're generating or selecting input files yourself and one of
-   these materials is missing, add it there rather than expecting the tool to synthesize one -
-   it deliberately refuses rather than inventing electrical/thermal properties.
+   `"Underfill"`), must have an entry in the `--connection-materials` sidecar's `"materials"`
+   map - never in a `--stackup` input file.** These materials are not physically part of either
+   piece being joined, so `chiplet_xml_composer` never looks for them there; it only accepts
+   them from `--connection-materials`, and refuses to run rather than invent a property. If
+   you're generating or selecting a `--connection-materials` file yourself and one of these
+   materials is missing, add a `"name": {"type": "Conductor", "conductivity": ...}` (or
+   `"Dielectric"`/`"permittivity"`) entry to its `"materials"` map. A same-named `<Material>`
+   already present in a `--stackup` file is treated as a collision, not a fallback source - see
+   [`CHIPLET_FORMAT.md`](CHIPLET_FORMAT.md) for why this file is kept separate from
+   `interconnect_methods.json`.
 7. **Compose the command** (or call `compose()` directly - identical semantics, see the Python
    API in the human section above) with one `--stackup`/`--attach` per technology/die and one
-   `--interconnect-methods`/`--boundary-layer` set only where step 4 required it.
+   `--interconnect-methods`/`--connection-materials`/`--boundary-layer` set only where step 4
+   required it.
 
 ### Flag grammar (compact)
 
@@ -416,6 +477,7 @@ decision procedure.
 --stackup <technology_id>=<path>               (one per distinct technology used)
 --attach <component_id>=<dielectric_name>      (one per die/die_array component)
 --interconnect-methods <path>                  (zero or one; required iff any connection: is used)
+--connection-materials <path>                  (zero or one; required iff any connection: is used)
 --boundary-layer <component_id>=<gds_layer>    (one per die whose connection_stack has nonzero height)
 --bondline-material <name>                     (zero or one; default "Underfill")
 -o <path>                                       (exactly one)

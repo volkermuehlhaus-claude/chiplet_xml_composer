@@ -1,11 +1,13 @@
-# What's read from `.chiplet` and `interconnect_methods.json`
+# What's read from `.chiplet`, `interconnect_methods.json`, and `connection_materials.json`
 
 `chiplet_xml_composer` reads only a narrow slice of the [`.chiplet` format](https://github.com/IHP-GmbH/chiplet-spec).
-It also reads a separate `interconnect_methods.json` registry.
+It also reads two separate sidecar files: `interconnect_methods.json`, a registry that has a
+real counterpart in the `.chiplet` ecosystem, and `connection_materials.json`, a
+`chiplet_xml_composer`-specific file that does not.
 
 This document lists exactly what the tool reads from each file. It also lists what the tool
-ignores. Some information is missing from both files entirely. For that information, you must
-use command-line flags instead.
+ignores. Some information is missing from all three files entirely. For that information, you
+must use command-line flags instead.
 
 See [`USAGE.md`](USAGE.md) for how to supply that missing information. See
 [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md) for what the tool does with what it reads.
@@ -41,6 +43,27 @@ ignores:
 
 Your `.chiplet` file can still include these fields. The tool just ignores them.
 
+### What `connection_materials.json` actually is
+
+`interconnect_methods.json` is a real concept from the `.chiplet` ecosystem: IHP publishes an
+[example](https://github.com/IHP-GmbH/chiplet-spec/blob/dev/examples/interconnect_methods.json)
+of one. But that file, real or not, only ever *names* a material -
+`layer_registry.<name>.material`, `methods.<id>.connection_stack.layers[].material` are both
+just strings. It never carries a Conductivity or Permittivity for that name, and neither does
+the `.chiplet` file itself.
+
+`connection_materials.json` fills that gap, and it has no counterpart in the real ecosystem -
+it's specific to `chiplet_xml_composer`. It exists because the alternative was worse: earlier
+versions of this tool required a connection method's materials (a Cu-pillar bump's `CuPillar`,
+say) to already be defined as a `<Material>` in one of the `--stackup` input files. That doesn't
+fit - a bump/pillar material isn't physically part of either the interposer or the die being
+joined - and it meant a real stackup XML ended up carrying material entries that were only ever
+there to satisfy this tool, with no clear record of where their numbers came from. See
+[`test_data/connection_materials.json`](../test_data/connection_materials.json) for the shape:
+each entry names a `"type"` (`"Conductor"` or `"Dielectric"`), the matching property
+(`"conductivity"` or `"permittivity"`/`"dielectric_loss_tangent"`), and a `"source"` string
+recording where the value came from.
+
 ### Read
 
 | `.chiplet` field | Used for |
@@ -54,9 +77,18 @@ Your `.chiplet` file can still include these fields. The tool just ignores them.
 | `interconnect_methods.json` field | Used for |
 |---|---|
 | `methods.<connection_id>.connection_stack.layers[].name` | Looked up in `layer_registry` for a GDS layer number. |
-| `methods.<connection_id>.connection_stack.layers[].material` | The via Layer's `Material=`. Must already be defined as a `<Material>` in an input stackup XML. |
+| `methods.<connection_id>.connection_stack.layers[].material` | The via Layer's `Material=`. This is only a name. The matching electrical properties are looked up in `connection_materials.json`, never in a `--stackup` XML - see below. |
 | `methods.<connection_id>.connection_stack.layers[].height` | Summed into the bridging Dielectric's own `Thickness=`. Also sets each layer's own z-extent within it. |
 | `layer_registry.<name>.gds_layer` | The via Layer's `Layer=` (GDS layer number). |
+
+| `connection_materials.json` field | Used for |
+|---|---|
+| `materials.<name>.type` | `"Conductor"` or `"Dielectric"`, becomes the synthesized `<Material Type="...">`. |
+| `materials.<name>.conductivity` | Required when `type` is `"Conductor"`. Becomes `<Material Conductivity="...">`. |
+| `materials.<name>.permittivity` | Required when `type` is `"Dielectric"`. Becomes `<Material Permittivity="...">`. |
+| `materials.<name>.dielectric_loss_tangent` | Optional, only meaningful when `type` is `"Dielectric"`. Becomes `<Material DielectricLossTangent="...">` when present. |
+| `materials.<name>.color` | Optional. Becomes `<Material Color="...">` when present. |
+| `materials.<name>.source` | Not read by the tool. It exists so a human can see where the value came from. Always fill it in anyway. |
 
 ### Not read (out of scope for v1)
 
@@ -80,8 +112,9 @@ Your `.chiplet` file can still include these fields. The tool just ignores them.
 
 ### Not read: missing information
 
-Two pieces of information are missing from both files entirely. That is why `--attach` and
-`--boundary-layer` exist as command-line flags. Nothing derives them automatically.
+Three pieces of information are missing from all three files entirely. That is why `--attach`,
+`--boundary-layer`, and `--connection-materials` exist as command-line flags. Nothing derives
+them automatically.
 
 - **Which Dielectric a die attaches to.** A `.chiplet` file has no field for this, within v1's
   scope. This would ordinarily fall out of x/y/z placement. This tool does not process
@@ -98,6 +131,11 @@ Two pieces of information are missing from both files entirely. That is why `--a
   are not an outline for the bonding material.
 
   You must supply this GDS layer via `--boundary-layer`.
+- **A connection-stack material's electrical properties.** `interconnect_methods.json` names a
+  via/pillar material (`CuPillar`, say). It never gives that name a Conductivity or a
+  Permittivity. Neither does the `.chiplet` file. Neither does the bondline material named by
+  `--bondline-material`. You must supply these via `--connection-materials`, a sidecar JSON file
+  that is this tool's own invention - see [above](#what-connection_materialsjson-actually-is).
 
 ---
 
@@ -148,13 +186,29 @@ shape shown in [`USAGE.md`](USAGE.md#2-flip-chip-die-with-a-cu-pillar-connection
 | Field | Read? | Notes |
 |---|---|---|
 | `methods.<id>.connection_stack.layers[].name` | yes | Looked up in `layer_registry`; `ComposeError` if missing there. |
-| `methods.<id>.connection_stack.layers[].material` | yes | Must resolve to an existing `<Material>` in some `--stackup` input, or `ComposeError`. |
+| `methods.<id>.connection_stack.layers[].material` | yes | A name only. Must resolve in `--connection-materials`, or `ComposeError`. Must **not** also exist as a `<Material>` in any `--stackup` input - that's a collision, `ComposeError`, not a fallback source. |
 | `methods.<id>.connection_stack.layers[].height` | yes | Summed for the bondline `Thickness=`; individual layer z-extents. |
 | `methods.<id>.connection_stack.layers[].diameter` | no | Read into the internal per-layer dict but not used - v1 draws a full-width via Layer with a `Boundary=`-restricted footprint, not a real per-bump-diameter shape. |
 | `layer_registry.<name>.gds_layer` | yes | Becomes the via Layer's `Layer=`. |
 | `layer_registry.<name>.gds_datatype` | no | Read into the internal dict but never written anywhere - the gds2palace stackup XML `<Layer>` element has no datatype field at all. |
 | `layer_registry.<name>.material`, `.purpose` | no | The *method's* own `layers[].material` is used instead, not the registry entry's. |
 | Anything else (`fab_anchors`, `default_method`, `pitch_rules`, `fab_params`, `adapter`, ...) | no | |
+
+### `connection_materials.json` fields
+
+This file is not part of the `.chiplet` ecosystem at all - see
+[above](#what-connection_materialsjson-actually-is). Required only when at least one component
+declares a non-empty `connection`.
+
+| Field | Read? | Notes |
+|---|---|---|
+| `materials.<name>.type` | yes | `"Conductor"` or `"Dielectric"`. Anything else, or absent, is `ComposeError`. |
+| `materials.<name>.conductivity` | yes, if `type == "Conductor"` | `ComposeError` if `type` is `"Conductor"` and this is absent. |
+| `materials.<name>.permittivity` | yes, if `type == "Dielectric"` | `ComposeError` if `type` is `"Dielectric"` and this is absent. |
+| `materials.<name>.dielectric_loss_tangent` | yes, if present | Optional even for a Dielectric. |
+| `materials.<name>.color` | yes, if present | Optional. |
+| `materials.<name>.source` | no | Documentation only; not read by `compose()`. Fill it in anyway. |
+| `description` (top-level) | no | Documentation only. |
 
 ### Checklist before invoking, for an agent parsing a `.chiplet` file cold
 
@@ -170,4 +224,6 @@ shape shown in [`USAGE.md`](USAGE.md#2-flip-chip-die-with-a-cu-pillar-connection
    do you have a `--boundary-layer` value for that component? (The last one is never in either
    file - external knowledge or a question back to the requester.)
 5. For each connection_stack layer's `material`, and for `--bondline-material` (default
-   `"Underfill"`): does it exist as a `<Material Name="...">` in at least one `--stackup` XML?
+   `"Underfill"`): do you have a `--connection-materials` file, and does it define that name
+   under `materials`? (A same-named `<Material>` already present in a `--stackup` XML does **not**
+   satisfy this - that's a collision, `ComposeError`.)

@@ -12,8 +12,8 @@ simulation, not a merged GDSII layout.
 - [`doc/USAGE.md`](doc/USAGE.md) - command-line reference, worked examples, Python API, error
   messages.
 - [`doc/CHIPLET_FORMAT.md`](doc/CHIPLET_FORMAT.md) - exactly which `.chiplet`/
-  `interconnect_methods.json` fields are read, which are ignored, and what's missing from both
-  that has to come from the command line instead.
+  `interconnect_methods.json`/`connection_materials.json` fields are read, which are ignored, and
+  what's missing from all three that has to come from the command line instead.
 - [`doc/HOW_IT_WORKS.md`](doc/HOW_IT_WORKS.md) - the merge algorithm itself (attachment via a
   bridging Dielectric + connection-stack vias, flip-chip z-reversal, outer-AIR stripping,
   name/GDS-layer collision avoidance across chiplets), plus known v1 limitations.
@@ -55,6 +55,7 @@ chiplet_xml_composer --chiplet-file assembly.chiplet \
     --stackup tech_a=stackup_a.xml --stackup tech_b=stackup_b.xml \
     --attach die1=iPassive --attach die2=iPassive \
     --interconnect-methods interconnect_methods.json \
+    --connection-materials connection_materials.json \
     --boundary-layer die1=235 --boundary-layer die2=236 \
     -o combined.xml
 ```

@@ -11,9 +11,6 @@
     <Material Name="TopVia2" Type="Conductor" Conductivity="3143000.0" Color="ff8000" />
     <Material Name="TopVia1" Type="Conductor" Conductivity="2191000.0" Color="ffe6bf" />
     <Material Name="Via4" Type="Conductor" Conductivity="1660000.0" Color="deac5e" />
-    <Material Name="CuPillar" Type="Conductor" Conductivity="33000000.0" Color="ff0000" />
-    <Material Name="SnAgSolder" Type="Conductor" Conductivity="7400000.0" Color="c0c0c0" />
-    <Material Name="Underfill" Type="Dielectric" Permittivity="1.0" DielectricLossTangent="0.0" Color="d0d0d0" />
     <Material Name="Passive" Type="Dielectric" Permittivity="6.6" DielectricLossTangent="0.0" Color="a0a0f0" />
     <Material Name="SiO2" Type="Dielectric" Permittivity="4.1" DielectricLossTangent="0.0" Color="fffcad" />
     <Material Name="Substrate" Type="Semiconductor" Permittivity="11.9" DielectricLossTangent="0" Conductivity="2.0" Color="01e0ff" />

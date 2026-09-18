@@ -50,6 +50,7 @@
 #       --stackup tech_a=stackup_a.xml --stackup tech_b=stackup_b.xml \
 #       --attach die1=iPassive --attach die2=iPassive \
 #       --interconnect-methods interconnect_methods.json \
+#       --connection-materials connection_materials.json \
 #       --boundary-layer die1=235 --boundary-layer die2=236 \
 #       -o combined.xml
 # or, once installed, via the console script:
@@ -429,40 +430,103 @@ class _NameRenamer:
     return self._material_renames.get(old_name, old_name)
 
 
-# -------------------- element construction ---------------------------
+# -------------------- connection-material sidecar (--connection-materials) ---------------------------
+#
+# Neither the .chiplet file nor a real interconnect_methods.json carries electrical/thermal
+# properties for a connection_stack layer's material or the bridging Dielectric's material -
+# IHP's own interconnect_methods.json only ever names a material (layer_registry.<name>.material,
+# connection_stack.layers[].material), it never gives it a Conductivity/Permittivity. Rather than
+# require these to be smuggled into an unrelated interposer/die stackup XML (which they are not
+# physically part of), or invent a value, chiplet_xml_composer requires a separate, explicitly
+# project-specific sidecar file (--connection-materials) that has no counterpart in the real
+# ecosystem - see test_data/connection_materials.json for the shape and sourced example values.
 
-def _find_material (root, name):
-  for el in root.iter("Material"):
-    if el.get("Name") == name:
-      return el
-  return None
-
-
-def _require_material_defined (roots, material_name, context):
-  """Raise unless material_name is defined as a <Material> somewhere in roots - used for a
-     connection_stack layer's material (e.g. "Cu", "SnAg"): chiplet_xml_composer never
-     fabricates electrical/thermal properties for a material it wasn't told about, since a
-     silently-invented Conductivity/Permittivity would be a physically wrong, undetectable
-     simulation input. The user must define it in one of their own input stackup XML files
-     (the format's own, correct extensibility point) instead.
+def _load_connection_materials (path):
+  """Load a --connection-materials sidecar JSON file.
   Args:
-      roots (list of xml.etree.ElementTree.Element): every input <Stackup> root to search
-      material_name (string): the Material name a connection_stack layer names
-      context (string): human-readable description of where this requirement came from, for
-        the error message (e.g. "connection_stack layer 'CuPillar' (method 'cupillar_opt1')")
+      path (string): path to the file
+  Returns:
+      dict: the parsed sidecar - see test_data/connection_materials.json for the shape
   Raises:
-      ComposeError: material_name isn't defined as a <Material> in any of roots
+      ComposeError: the file doesn't exist or isn't valid JSON
   """
-  if not any(_find_material(root, material_name) is not None for root in roots):
+  if not os.path.isfile(path):
+    raise ComposeError(f'--connection-materials file not found: "{path}"')
+  try:
+    with open(path, "r", encoding="utf-8") as f:
+      return json.load(f)
+  except json.JSONDecodeError as e:
+    raise ComposeError(f'Could not parse --connection-materials file "{path}": {e}')
+
+
+def _ensure_connection_material (base_materials_el, renamer, connection_materials,
+                                  added_material_names, material_name, context):
+  """Add a <Material> element for material_name, sourced from --connection-materials, unless
+     one was already added earlier in this same compose() run (a connection method reused by
+     several dies - e.g. the same Cu-pillar method on two dies - must get exactly one shared
+     Material, not a renamed duplicate per die, the same way its GDS layer number is shared
+     rather than offset per chiplet). No-op if material_name was already added.
+  Args:
+      base_materials_el (xml.etree.ElementTree.Element): the combined output's <Materials>
+      renamer (_NameRenamer): used only to check for a name collision against every Material
+        already contributed by the interposer or by an earlier die's own <Materials> - never to
+        rename material_name itself, since it must stay exactly what interconnect_methods.json's
+        connection_stack/--bondline-material named
+      connection_materials (dict): parsed --connection-materials sidecar
+      added_material_names (set of string): names already added this compose() run - mutated
+      material_name (string): the Material name to ensure exists
+      context (string): human-readable description, for error messages (e.g. "connection_stack
+        layer 'CuPillar' (method 'cupillar_opt1')" or "component 'die1''s bridging Dielectric")
+  Raises:
+      ComposeError: material_name isn't defined in connection_materials, or collides with a
+        Material already contributed by the interposer or a die's own stackup XML
+  """
+  if material_name in added_material_names:
+    return
+  if material_name in renamer.material_names:
     raise ComposeError(
-        f'Material "{material_name}" (needed for {context}) is not defined as a <Material> in '
-        f'any input stackup XML - add a <Material Name="{material_name}" .../> to one of them '
-        f'(chiplet_xml_composer never invents electrical/thermal properties for a material it '
-        f'was not told about)')
+        f'Material "{material_name}" (needed for {context}, from --connection-materials) '
+        f'collides with a Material of the same name already defined in an input stackup XML - '
+        f'rename one of them')
+  spec = connection_materials.get("materials", {}).get(material_name)
+  if spec is None:
+    raise ComposeError(
+        f'Material "{material_name}" (needed for {context}) has no entry in this '
+        f'--connection-materials file\'s "materials" map')
+
+  el = ET.SubElement(base_materials_el, "Material")
+  el.set("Name", material_name)
+  material_type = spec.get("type", "")
+  el.set("Type", material_type)
+  if material_type.lower() == "conductor":
+    if "conductivity" not in spec:
+      raise ComposeError(
+          f'Material "{material_name}" (needed for {context}) is Type="Conductor" in '
+          f'--connection-materials but has no "conductivity"')
+    el.set("Conductivity", str(spec["conductivity"]))
+  elif material_type.lower() == "dielectric":
+    if "permittivity" not in spec:
+      raise ComposeError(
+          f'Material "{material_name}" (needed for {context}) is Type="Dielectric" in '
+          f'--connection-materials but has no "permittivity"')
+    el.set("Permittivity", str(spec["permittivity"]))
+    if "dielectric_loss_tangent" in spec:
+      el.set("DielectricLossTangent", str(spec["dielectric_loss_tangent"]))
+  else:
+    raise ComposeError(
+        f'Material "{material_name}" (needed for {context}) has unsupported '
+        f'"type": "{material_type}" in --connection-materials (must be "Conductor" or '
+        f'"Dielectric")')
+  if "color" in spec:
+    el.set("Color", spec["color"])
+
+  renamer.material_names.add(material_name)
+  added_material_names.add(material_name)
 
 
 def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
-             attach_map=None, boundary_layer_map=None, bondline_material="Underfill"):
+             connection_materials_path=None, attach_map=None, boundary_layer_map=None,
+             bondline_material="Underfill"):
   """Stitch every die component in a .chiplet assembly onto its interposer's stackup XML,
      producing one combined stackup XML tree.
   Args:
@@ -471,6 +535,13 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
         technology.stackup field is a different, YAML schema and is never read here
       interconnect_methods_path (string, optional): path to interconnect_methods.json -
         required if any die component declares a `connection:`
+      connection_materials_path (string, optional): path to a --connection-materials sidecar
+        JSON file (see test_data/connection_materials.json) - required under the same condition
+        as interconnect_methods_path. Supplies electrical/thermal properties for every
+        connection_stack layer's material and for bondline_material below - these are never
+        looked up in an input stackup XML, since they are not physically part of either piece
+        being joined, and neither the .chiplet file nor a real interconnect_methods.json carries
+        this data at all.
       attach_map (dict, optional): component id -> Dielectric name in the interposer's own
         stackup XML that this component attaches to. Every die component must have an entry.
       boundary_layer_map (dict, optional): component id -> GDS layer number to restrict that
@@ -479,9 +550,9 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
         nonzero total height) - nothing in the .chiplet file or interconnect_methods.json
         names a boundary layer for the bridging dielectric itself (only the via/pillar metal
         layers get one, from interconnect_methods.json's layer_registry).
-      bondline_material (string, optional): Material name for each bridging Dielectric -
-        must already be defined in the interposer's own stackup XML (default "Underfill",
-        matching this ecosystem's existing convention - see interposer_SG13G2.xml)
+      bondline_material (string, optional): Material name for each bridging Dielectric - looked
+        up in connection_materials_path (default "Underfill" - see test_data/connection_materials.json
+        for a sourced example)
   Returns:
       xml.etree.ElementTree.ElementTree: the combined stackup, ready to write with
         stackup_reader-compatible structure (call .write(path, encoding="UTF-8",
@@ -498,6 +569,7 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
   die_components = _pick_die_components(chiplet_data)
 
   interconnect_methods = None
+  connection_materials = None
   if any(die.get("connection") for die in die_components):
     if interconnect_methods_path is None:
       raise ComposeError(
@@ -505,6 +577,13 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
           'given - it is required whenever any component uses connection: (a GDS layer number '
           'for a connection_stack layer is never available from the .chiplet file alone)')
     interconnect_methods = _load_interconnect_methods(interconnect_methods_path)
+    if connection_materials_path is None:
+      raise ComposeError(
+          'At least one component declares connection:, but no --connection-materials was '
+          'given - it is required whenever any component uses connection: (electrical '
+          'properties for a connection_stack layer\'s material are never available from the '
+          '.chiplet file or interconnect_methods.json alone)')
+    connection_materials = _load_connection_materials(connection_materials_path)
 
   def stackup_path_for (component):
     tech = component.get("technology")
@@ -519,15 +598,13 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
   base_tree = ET.parse(base_path)
   base_root = base_tree.getroot()
 
-  # every input root (base + every chiplet, read once up front) - needed for
-  # _require_material_defined() to search across all of them, not just the base
-  all_roots = [base_root]
   chip_roots_by_id = {}
   for die in die_components:
     chip_roots_by_id[die["id"]] = ET.parse(stackup_path_for(die)).getroot()
-  all_roots.extend(chip_roots_by_id.values())
 
   renamer = _NameRenamer(base_root)
+  added_connection_material_names = set()  # shared across every die this compose() run - see
+                                            # _ensure_connection_material()'s own docstring
   base_dielectrics_el = base_root.find("./ELayers/Dielectrics")
   base_layers_el = base_root.find("./ELayers/Layers")
   base_materials_el = base_root.find("./Materials")
@@ -578,8 +655,9 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
               f'Component "{component_id}" needs a bridging Dielectric (connection: '
               f'"{connection_id}" has nonzero height) but has no --boundary-layer mapping for '
               f'its Boundary= GDS layer number')
-        _require_material_defined(all_roots, bondline_material,
-                                   f'component "{component_id}"\'s bridging Dielectric')
+        _ensure_connection_material(base_materials_el, renamer, connection_materials,
+                                     added_connection_material_names, bondline_material,
+                                     f'component "{component_id}"\'s bridging Dielectric')
 
         bondline_name = _unique_name(renamer.dielectric_names, f"{component_id}_bondline")
         renamer.dielectric_names.add(bondline_name)
@@ -603,8 +681,9 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
         # interposer-scoped, regardless of where it physically sits)
         via_offset_zmin = 0.0
         for layer in stack_layers:
-          _require_material_defined(
-              all_roots, layer["material"],
+          _ensure_connection_material(
+              base_materials_el, renamer, connection_materials, added_connection_material_names,
+              layer["material"],
               f'connection_stack layer "{layer["name"]}" (method "{connection_id}")')
           via_name = _unique_name(renamer.layer_names, f"{component_id}_{layer['name']}")
           renamer.layer_names.add(via_name)
@@ -739,8 +818,16 @@ def main (argv=None):
   parser.add_argument("--interconnect-methods", default=None,
                        help="path to interconnect_methods.json - required if any component "
                             "declares connection:")
+  parser.add_argument("--connection-materials", default=None,
+                       help="path to a --connection-materials sidecar JSON file (see "
+                            "test_data/connection_materials.json) - required under the same "
+                            "condition as --interconnect-methods; supplies electrical/thermal "
+                            "properties for connection_stack layer materials and for "
+                            "--bondline-material, since neither the .chiplet file nor "
+                            "interconnect_methods.json carries these")
   parser.add_argument("--bondline-material", default="Underfill",
-                       help='Material name for each bridging Dielectric (default: "Underfill")')
+                       help='Material name for each bridging Dielectric, looked up in '
+                            '--connection-materials (default: "Underfill")')
   parser.add_argument("-o", "--output", required=True, help="path to write the combined stackup XML to")
   args = parser.parse_args(argv)
 
@@ -750,6 +837,7 @@ def main (argv=None):
   print("  attach map:           ", args.attach_map)
   print("  boundary layer map:   ", args.boundary_layer_map)
   print("  interconnect methods: ", args.interconnect_methods)
+  print("  connection materials: ", args.connection_materials)
   print("  bondline material:    ", args.bondline_material)
   print("  output:               ", args.output)
 
@@ -759,6 +847,7 @@ def main (argv=None):
         chiplet_path=args.chiplet_file,
         stackup_map=args.stackup_map,
         interconnect_methods_path=args.interconnect_methods,
+        connection_materials_path=args.connection_materials,
         attach_map=args.attach_map,
         boundary_layer_map=boundary_layer_map,
         bondline_material=args.bondline_material,

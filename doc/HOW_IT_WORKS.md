@@ -58,7 +58,8 @@ Here is what happens for each die:
 
    One `<Dielectric>` is created, called the bondline. It is `Reference`d onto the `--attach`
    target's Top edge. It is sized to the connection stack's total height. It carries
-   `Boundary=` from `--boundary-layer`.
+   `Boundary=` from `--boundary-layer`. Its `Material=` is `--bondline-material` (default
+   `"Underfill"`).
 
    One `<Layer Type="VIA">` is created per `connection_stack` entry. Each one sits on its own
    real GDS layer, from `interconnect_methods.json`'s `layer_registry`. Each one is embedded
@@ -66,6 +67,13 @@ Here is what happens for each die:
    `iMetal4` works the same way: it sits embedded inside `iSiO2`, using `Reference="iSiO2"
    ReferenceEdge="Bottom"`. A bump or pillar physically sits inside its surrounding underfill,
    not above it.
+
+   Neither the bondline's material nor any via layer's material can come from a `--stackup`
+   input file. A bump or pillar material, and the material bonding it in place, aren't
+   physically part of either the interposer's or the die's own stackup - so this tool never
+   looks for them there. It resolves both from `--connection-materials` instead, synthesizing a
+   new `<Material>` element the first time each name is needed in this `compose()` run. See
+   [Connection-material sourcing and deduplication](#connection-material-sourcing-and-deduplication).
 
    Each via is `Reference`d off the bondline's own Bottom edge. This is numerically identical
    to referencing the attach point's Top edge directly, since the bondline's `zmin` is the
@@ -158,6 +166,32 @@ For each die, in order:
   first free variant: `name`, then `name2`, then `name3`, and so on. This is the same pattern
   setupEM's own `_unique_name()` uses.
 
+### Connection-material sourcing and deduplication
+
+A connection method's materials, and the bondline material, are resolved once per whole
+`compose()` run, not once per die. `compose()` keeps a single set of "already synthesized"
+material names, shared across every die it processes. The first die that needs `CuPillar`
+causes a `<Material Name="CuPillar" .../>` to be built from `--connection-materials` and
+appended to the interposer's own `<Materials>` block. A second die using the same connection
+method, later in the same run, finds `CuPillar` already in that set and does nothing - it
+reuses the existing element instead of creating a second one.
+
+This mirrors how a connection method's GDS layer number is already handled (see
+[Name/GDS-layer collision avoidance](#namegds-layer-collision-avoidance)): the via layer number
+is a fixed, PDK-wide registry number, so two dies sharing a connection method are meant to share
+it, never get their own private offset copy. A connection material is the same kind of
+fact - it names one real physical material, and two Cu-pillar bumps in the same assembly use the
+literal same material, not two coincidentally-identical ones. Deduplicating them keeps the
+output's `<Materials>` block from growing a redundant entry per die and keeps `Name="CuPillar"`
+meaning one thing throughout the file.
+
+This is why a same-named `<Material>` already present in a `--stackup` input file is treated as
+a collision (`ComposeError`), not a fallback source: allowing it would mean this tool sometimes
+takes a connection material's properties from `--connection-materials` and sometimes silently
+from whichever die happened to define a same-named `<Material>` first, depending on `.chiplet`
+component order. That's exactly the kind of hidden, order-dependent data source this design
+exists to rule out - see [`CHIPLET_FORMAT.md`](CHIPLET_FORMAT.md#what-connection_materialsjson-actually-is).
+
 ### Why a fresh chain, not a rewritten one
 
 An earlier, hand-written prototype tried a different approach:
@@ -245,6 +279,15 @@ tracing an unexpected output back to a specific step):
 ```
 parse interposer stackup XML -> base_root
 renamer = NameRenamer(base_root)   # seeds name sets + used GDS layers from base_root
+added_connection_material_names = {}   # shared across every die in this compose() run
+
+# ensure_connection_material(name), called below:
+#   if name in added_connection_material_names: return          # already synthesized, reuse it
+#   if name in renamer.material_names: raise ComposeError        # collision with a --stackup Material
+#   entry = connection_materials["materials"].get(name)
+#   if entry is None: raise ComposeError                         # not defined in --connection-materials
+#   build <Material Name=name Type=entry.type ...> from entry, append to base_root's <Materials>
+#   renamer.material_names.add(name); added_connection_material_names.add(name)
 
 for each die component (in .chiplet components[] order):
     chip_root = parse(stackup_map[die.technology])
@@ -269,12 +312,14 @@ for each die component (in .chiplet components[] order):
         total_height = sum(layer.height for layer in stack)
         if total_height > 0:
             boundary = boundary_layer_map[die.id]            # KeyError -> ComposeError
-            require_material_defined(bondline_material)      # ComposeError if undefined anywhere
+            ensure_connection_material(bondline_material)    # see below; ComposeError on collision
+                                                               # or missing --connection-materials entry
             bondline = new Dielectric(Reference=current_ref, ReferenceEdge="Top",
-                                       Thickness=total_height, Boundary=boundary)
+                                       Thickness=total_height, Boundary=boundary,
+                                       Material=bondline_material)
             offset = 0
             for layer in stack:
-                require_material_defined(layer.material)     # ComposeError if undefined anywhere
+                ensure_connection_material(layer.material)   # see below
                 new Layer(Type="VIA", Material=layer.material, Layer=layer.gds_layer,
                           Reference=bondline, ReferenceEdge="Bottom",
                           Zmin=offset, Zmax=offset+layer.height)
@@ -313,7 +358,8 @@ return base_root (as an ElementTree)
 | `flip_chip` handling | `strip_outer_air_dielectrics()` returned `[]` (no AIR found to expose a pivot) |
 | `connection:` resolution | `die.connection` not in `interconnect_methods["methods"]`, or a `connection_stack` layer name not in `interconnect_methods["layer_registry"]` |
 | Bondline construction | `total_height > 0` and `boundary_layer_map` has no entry for `component.id` |
-| Material checks (bondline and each via layer) | the named material isn't defined as a `<Material>` in the interposer's or *any* die's stackup XML |
+| Connection-material check (bondline and each via layer) | the named material has no entry in `connection_materials["materials"]`, or it collides with a same-named `<Material>` already present from a `--stackup` input |
+| `--connection-materials` requirement (once, before the loop) | any component declares a non-empty `connection` and `--connection-materials` was not given |
 | Component selection (once, before the loop) | `components[]` has zero or 2+ entries with `type == "interposer"` |
 
 Nothing else in the pipeline raises `ComposeError` - nested XML/YAML/JSON structural problems

@@ -1,0 +1,25 @@
+{
+  "description": "chiplet_xml_composer's OWN material-property sidecar. This has no counterpart in the real .chiplet/interconnect_methods.json ecosystem - IHP's own interconnect_methods.json only names materials (layer_registry.<name>.material, methods.<id>.connection_stack.layers[].material), it never carries electrical/thermal properties for them. Every value here is deliberately sourced below rather than guessed, since chiplet_xml_composer never invents a material property at merge time - it requires one to be defined, here or in a --stackup input file, and refuses to run otherwise.",
+
+  "materials": {
+    "CuPillar": {
+      "type": "Conductor",
+      "conductivity": 59600000.0,
+      "color": "ff0000",
+      "source": "Bulk copper conductivity (resistivity 1.68 uOhm*cm, a standard physical reference value - e.g. CRC Handbook of Chemistry and Physics). Used as-is for the electroplated Cu pillar body; no specific, independently-verified conductivity figure for electroplated Cu pillar microstructure specifically was found, so this is bulk copper, not a pillar-derated value."
+    },
+    "SnAgSolder": {
+      "type": "Conductor",
+      "conductivity": 7400000.0,
+      "color": "c0c0c0",
+      "source": "Within the published resistivity range for SAC305 (Sn96.5/Ag3.0/Cu0.5) solder, 13.0-14.5 uOhm*cm -> 6.9e6-7.7e6 S/m. See https://us.rs-online.com/m/d/8d9ef1f686bf70839a288bf4fd8e669e.pdf and https://www.researchgate.net/figure/Electrical-resistivity-of-SAC305-solder-alloy-with-different-surface-finish_fig4_338055862"
+    },
+    "Underfill": {
+      "type": "Dielectric",
+      "permittivity": 3.5,
+      "dielectric_loss_tangent": 0.018,
+      "color": "d0d0d0",
+      "source": "Typical epoxy-resin flip-chip underfill: dielectric constant ~3.5-3.8, loss tangent ~0.018-0.02. See https://imapsource.org/api/v1/articles/56030-flip-chip-underfill-rf-characterization.pdf and https://www.researchgate.net/publication/224153258_Design_of_Flip-Chip_Interconnect_Using_Epoxy-Based_Underfill_Up_to_V_-Band_Frequencies_With_Excellent_Reliability - real formulations vary; consult a supplier datasheet for a specific product."
+    }
+  }
+}
