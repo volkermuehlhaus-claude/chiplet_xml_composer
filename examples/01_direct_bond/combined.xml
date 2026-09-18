@@ -54,9 +54,7 @@
       <Layer Name="iVia4" Type="via" Reference="iMetal4" ReferenceEdge="Top" Material="Via4" Layer="1066" Zmin="0.0000" Zmax="0.5400" />
       <Layer Name="iMetal4" Type="conductor" Reference="iSiO2" ReferenceEdge="Bottom" Material="Metal4" Layer="1050" Zmin="0.6000" Zmax="1.0900" />
       <Layer Name="Interposer_Backside" Type="sheet" Reference="iSubstrate" ReferenceEdge="Bottom" Material="PEC" Layer="900" Zmin="0.0000" Zmax="0.0000" />
-      <Layer Name="BACKSIDEGND" Type="CONDUCTOR" Material="LOWLOSS" Layer="251" Reference="Substrate" ReferenceEdge="Bottom" Zmin="-6.2500" Zmax="0.0000" />
-      <Layer Name="LBE" Type="DIELECTRIC" Material="AIR" Layer="157" Reference="BACKSIDEGND" ReferenceEdge="Top" Zmin="0.0000" Zmax="183.7500" />
-      <Layer Name="SUBGND" Type="CONDUCTOR" Material="LOWLOSS" Layer="250" Reference="LBE" ReferenceEdge="Top" Zmin="-3.7500" Zmax="0.0000" />
+      <Layer Name="SUBGND" Type="CONDUCTOR" Material="LOWLOSS" Layer="250" Reference="Substrate" ReferenceEdge="Bottom" Zmin="180.0000" Zmax="183.7500" />
       <Layer Name="Activ" Type="CONDUCTOR" Material="Activ" Layer="1" Reference="SUBGND" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.4000" />
       <Layer Name="Cont" Type="VIA" Material="Cont" Layer="6" Reference="Activ" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.6400" />
       <Layer Name="Metal1" Type="CONDUCTOR" Material="Metal1" Layer="8" Reference="Cont" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.4200" />

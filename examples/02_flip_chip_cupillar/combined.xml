@@ -58,8 +58,8 @@
       <Layer Name="iVia4" Type="via" Reference="iMetal4" ReferenceEdge="Top" Material="Via4" Layer="1066" Zmin="0.0000" Zmax="0.5400" />
       <Layer Name="iMetal4" Type="conductor" Reference="iSiO2" ReferenceEdge="Bottom" Material="Metal4" Layer="1050" Zmin="0.6000" Zmax="1.0900" />
       <Layer Name="Interposer_Backside" Type="sheet" Reference="iSubstrate" ReferenceEdge="Bottom" Material="PEC" Layer="900" Zmin="0.0000" Zmax="0.0000" />
-      <Layer Name="die1_CuPillar" Type="VIA" Material="CuPillar" Layer="500" Reference="die1_bondline" ReferenceEdge="Bottom" Zmin="0.0000" Zmax="28.0000" />
-      <Layer Name="die1_SnAgCap" Type="VIA" Material="SnAgSolder" Layer="501" Reference="die1_bondline" ReferenceEdge="Bottom" Zmin="28.0000" Zmax="44.0000" />
+      <Layer Name="die1_CuPillar" Type="VIA" Material="CuPillar" Layer="500" Reference="die1_bondline" ReferenceEdge="Bottom" Zmin="-1.9000" Zmax="28.0000" />
+      <Layer Name="die1_SnAgCap" Type="VIA" Material="SnAgSolder" Layer="501" Reference="die1_bondline" ReferenceEdge="Bottom" Zmin="28.0000" Zmax="45.9000" />
       <Layer Name="TopMetal2" Type="CONDUCTOR" Material="TopMetal22" Layer="134" Reference="SiO2" ReferenceEdge="Bottom" Zmin="1.5000" Zmax="4.5000" />
       <Layer Name="TopVia2" Type="VIA" Material="TopVia22" Layer="133" Reference="TopMetal2" ReferenceEdge="Top" Zmin="0.0000" Zmax="2.8000" />
       <Layer Name="TopMetal1" Type="CONDUCTOR" Material="TopMetal12" Layer="126" Reference="TopVia2" ReferenceEdge="Top" Zmin="0.0000" Zmax="2.0000" />
@@ -77,9 +77,7 @@
       <Layer Name="Metal1" Type="CONDUCTOR" Material="Metal1" Layer="8" Reference="Via1" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.4200" />
       <Layer Name="Cont" Type="VIA" Material="Cont" Layer="6" Reference="Metal1" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.6400" />
       <Layer Name="Activ" Type="CONDUCTOR" Material="Activ" Layer="1" Reference="Cont" ReferenceEdge="Top" Zmin="0.0000" Zmax="0.4000" />
-      <Layer Name="LBE" Type="DIELECTRIC" Material="AIR" Layer="157" Reference="Activ" ReferenceEdge="Top" Zmin="0.0000" Zmax="183.7500" />
-      <Layer Name="SUBGND" Type="CONDUCTOR" Material="LOWLOSS" Layer="250" Reference="LBE" ReferenceEdge="Top" Zmin="-183.7500" Zmax="-180.0000" />
-      <Layer Name="BACKSIDEGND" Type="CONDUCTOR" Material="LOWLOSS" Layer="251" Reference="SUBGND" ReferenceEdge="Top" Zmin="180.0000" Zmax="186.2500" />
+      <Layer Name="SUBGND" Type="CONDUCTOR" Material="LOWLOSS" Layer="250" Reference="Activ" ReferenceEdge="Top" Zmin="0.0000" Zmax="3.7500" />
     </Layers>
   </ELayers>
 </Stackup>

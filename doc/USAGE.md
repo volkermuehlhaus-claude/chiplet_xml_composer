@@ -278,7 +278,13 @@ to see the result. Bottom to top, right above the interposer's own `iPassive`, y
 - `die1_bondline`, a new 44 um `Underfill` Dielectric, carrying `Boundary="2000"` from
   `--boundary-layer`. This is the interconnect stack's total height: 28 + 16 um.
 - `die1_CuPillar` and `die1_SnAgCap`, two new `<Layer Type="VIA">` elements, on GDS layers 500
-  and 501. Both are embedded within `die1_bondline`'s own z-range, not stacked above it.
+  and 501. Their combined z-range is *wider* than `die1_bondline`'s own 44 um: `die1_CuPillar`'s
+  own `Zmin` reaches 1.9 um below the bondline's own bottom edge, down to `iTopMetal2`'s own top
+  surface, and `die1_SnAgCap`'s own `Zmax` reaches 1.9 um above the bondline's own top edge, up to
+  `TopMetal2`'s own bottom surface (once flipped). A bump's declared height is a pad-to-pad
+  measurement, not a dielectric-surface-to-dielectric-surface one - see
+  [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#connection-stack-pad-to-pad-anchoring) for why, and open the
+  picture below to see the via visibly crossing into `iSiO2` below and `SiO2` above.
 - In `<Materials>`, one new `Underfill`, `CuPillar`, and `SnAgSolder` entry each - synthesized
   from `connection_materials.json`, with the properties shown above. Neither
   `interposer_IntM4TM2.xml` nor `SG13G2_die.xml` defines any of these three.
@@ -436,6 +442,14 @@ with status 1. Each message names exactly what's missing:
   `--boundary-layer X=<gds-layer-number>`. This is only required when the resolved
   `connection_stack` has nonzero total height. A direct, zero-height bond needs no bondline and
   no boundary layer.
+- `"Component "X"'s --attach target "Y" is not a Dielectric in the interposer's own stackup"` -
+  a connection stack anchors to the interposer's own topmost metal, which means it needs
+  `--attach`'s own target to be a real `<Dielectric Name="Y">` there - not a typo, and not a
+  Layer name. See [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#connection-stack-pad-to-pad-anchoring).
+- `"... has no non-sheet metal Layer for a connection_stack to anchor to"` - a connection stack
+  needs a real conductor `<Layer>` (not a `Type="sheet"` one) somewhere in the interposer's own
+  stackup, and a real conductor `<Layer>` somewhere in this die's own stackup, to anchor its two
+  outer ends to. Add one, or don't use `connection:` for a component whose stackup has none.
 - `"Material "X" ... has no entry in this --connection-materials file's "materials" map"` -
   `chiplet_xml_composer` never invents electrical or thermal material properties. Add a
   `"X": {"type": "Conductor", "conductivity": ...}` (or `"Dielectric"`/`"permittivity"`) entry
@@ -490,7 +504,11 @@ decision procedure.
      path (see step 6) under the same condition. If the resolved `connection_stack` has nonzero
      total height, that die also needs `--boundary-layer COMPONENT_ID=<gds-layer-number>` - a
      value that must come from the caller (nothing in either input file names it; see
-     [`CHIPLET_FORMAT.md`](CHIPLET_FORMAT.md#not-read-missing-information) for why).
+     [`CHIPLET_FORMAT.md`](CHIPLET_FORMAT.md#not-read-missing-information) for why). A nonzero
+     total height also needs a real, non-`Type="sheet"` conductor `<Layer>` somewhere in the
+     interposer's own stackup, and another in this die's own stackup - the connection stack
+     anchors its two outer ends to the real pad metal on each side, not to a Dielectric edge.
+     See [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#connection-stack-pad-to-pad-anchoring).
 5. **Check `orientation:`** on each die. `flip_chip` requires that die's own stackup XML to have
    an outer `AIR` Dielectric (topmost or bottommost by resolved z) - if you can, verify this by
    reading the die's stackup XML directly (look for a `<Dielectric ... Material="AIR" />` or one

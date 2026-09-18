@@ -459,6 +459,35 @@ def _load_connection_materials (path):
     raise ComposeError(f'Could not parse --connection-materials file "{path}": {e}')
 
 
+def _topmost_metal (metals_list, context):
+  """The non-sheet metal with the highest resolved zmax in metals_list - the real conductor
+     surface a connection_stack's lower end should anchor to (a Type="sheet" Layer is a
+     zero-thickness idealized boundary condition, e.g. a PEC backside ground plane, never a
+     real bond pad, so it's excluded even if it happens to be the outermost element).
+  Args:
+      metals_list (gds2palace.stackup_reader.metal_layers_list): already-resolved metals
+      context (string): human-readable description of metals_list's owner, for the error message
+  Returns:
+      gds2palace.stackup_reader.metal_layer
+  Raises:
+      ComposeError: metals_list has no non-sheet metal at all
+  """
+  candidates = [m for m in metals_list.metals if not m.is_sheet]
+  if not candidates:
+    raise ComposeError(f'{context} has no non-sheet metal Layer for a connection_stack to '
+                        f'anchor to')
+  return max(candidates, key=lambda m: m.zmax)
+
+
+def _bottommost_metal (metals_list, context):
+  """The non-sheet metal with the lowest resolved zmin in metals_list - see _topmost_metal()."""
+  candidates = [m for m in metals_list.metals if not m.is_sheet]
+  if not candidates:
+    raise ComposeError(f'{context} has no non-sheet metal Layer for a connection_stack to '
+                        f'anchor to')
+  return min(candidates, key=lambda m: m.zmin)
+
+
 def _ensure_connection_material (base_materials_el, renamer, connection_materials,
                                   added_material_names, material_name, context):
   """Add a <Material> element for material_name, sourced from --connection-materials, unless
@@ -597,6 +626,10 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
   base_path = stackup_path_for(interposer_component)
   base_tree = ET.parse(base_path)
   base_root = base_tree.getroot()
+  # parsed once, before any die is appended below, so a connection_stack's lower anchor (see
+  # _topmost_metal() below) always resolves against the interposer's own original metals -
+  # never against a metal an earlier die in this same compose() run just added
+  _, base_dielectrics, base_metals = stackup_reader.parse_substrate(base_root)
 
   chip_roots_by_id = {}
   for die in die_components:
@@ -640,6 +673,11 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
       pivot_z = max(d.zmax for d in chip_dielectrics.dielectrics)
       reverse_stackup_z_order(chip_dielectrics, chip_metals, pivot_z)
 
+    # sorted once here (not just where the Dielectrics loop used to do it) - the connection-stack
+    # anchor below and the Dielectrics loop further down both need "this chiplet's own bottommost
+    # Dielectric", and both must agree on which one that is
+    ordered_dielectrics = sorted(chip_dielectrics.dielectrics, key=lambda d: d.zmin)
+
     # ---- connection stack: bridging Dielectric + one real via Layer per bump/pillar layer ----
     connection_id = die.get("connection")
     current_reference = attach_point
@@ -669,24 +707,53 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
         bondline_el.set("Thickness", f"{total_height:.4f}")
         bondline_el.set("Boundary", str(int(boundary_layer)))
 
-        # each via/pillar layer is embedded WITHIN the bondline dielectric's own z-range - it
-        # represents the conductor body inside that dielectric, not something stacked on top
-        # of it (same convention as e.g. interposer_SG13G2.xml's own TopMetal2, embedded in
-        # SiO2 via Reference="SiO2" ReferenceEdge="Bottom"). Referenced off the bondline's own
-        # Bottom edge rather than off attach_point directly - numerically identical (the
-        # bondline's own zmin IS attach_point's zmax), but this keeps the via's Reference
-        # chain inside the chiplet's own subtree, so detect_chiplet_groups() scopes it to this
-        # chiplet instead of unconditionally treating it as interposer (see that function's
-        # docstring: a Layer referencing an interposer Dielectric directly is always
-        # interposer-scoped, regardless of where it physically sits)
+        # A connection_stack's declared total height is a pad-to-pad bump/pillar height, not a
+        # dielectric-surface-to-dielectric-surface gap - the via/pillar metal itself must reach
+        # the real conductor surface on each side, not just span the bondline's own nominal
+        # extent. Any passivation (or other dielectric) sitting between --attach's own Dielectric
+        # edge and the real pad metal is bridged by extending the via chain's own two outer ends
+        # past the bondline's own Bottom/Top - overlapping into the neighboring Dielectric on
+        # each side, same as any other via/metal embedded inside its surrounding Dielectric (see
+        # find_z_overlaps(), which only flags two overlapping DIELECTRICS, never a Layer
+        # overlapping one - a via reaching past its own bondline into the next Dielectric over is
+        # exactly as normal as iTopMetal2 sitting embedded inside iSiO2). The bondline Dielectric
+        # itself, and the die's own first Dielectric right above it, are deliberately left
+        # untouched - shifting either of *those* would create exactly the Dielectric-vs-Dielectric
+        # overlap find_z_overlaps() exists to catch. See
+        # HOW_IT_WORKS.md#connection-stack-pad-to-pad-anchoring.
+        attach_dielectric = base_dielectrics.get_by_name(attach_point)
+        if attach_dielectric is None:
+          raise ComposeError(
+              f'Component "{component_id}"\'s --attach target "{attach_point}" is not a '
+              f'Dielectric in the interposer\'s own stackup')
+        interposer_top_metal = _topmost_metal(base_metals, 'the interposer')
+        chip_bottom_metal = _bottommost_metal(
+            chip_metals, f'component "{component_id}"\'s own stackup')
+        gap_below_attach = attach_dielectric.zmax - interposer_top_metal.zmax
+        metal_offset_in_die = chip_bottom_metal.zmin - ordered_dielectrics[0].zmin
+
+        # each via/pillar layer is embedded WITHIN the bondline dielectric's own z-range, same
+        # convention as e.g. interposer_SG13G2.xml's own TopMetal2, embedded in SiO2 via
+        # Reference="SiO2" ReferenceEdge="Bottom" - except the very first layer's own Zmin and
+        # the very last layer's own Zmax are pulled past the bondline's own Bottom/Top by
+        # gap_below_attach/metal_offset_in_die respectively, to reach the real pad metal on each
+        # side. Referenced off the bondline's own Bottom edge rather than off attach_point
+        # directly - numerically identical (the bondline's own zmin IS attach_point's zmax), but
+        # this keeps the via's Reference chain inside the chiplet's own subtree, so
+        # detect_chiplet_groups() scopes it to this chiplet instead of unconditionally treating
+        # it as interposer (see that function's docstring: a Layer referencing an interposer
+        # Dielectric directly is always interposer-scoped, regardless of where it physically sits)
         via_offset_zmin = 0.0
-        for layer in stack_layers:
+        for i, layer in enumerate(stack_layers):
           _ensure_connection_material(
               base_materials_el, renamer, connection_materials, added_connection_material_names,
               layer["material"],
               f'connection_stack layer "{layer["name"]}" (method "{connection_id}")')
           via_name = _unique_name(renamer.layer_names, f"{component_id}_{layer['name']}")
           renamer.layer_names.add(via_name)
+          via_zmin = via_offset_zmin - (gap_below_attach if i == 0 else 0.0)
+          via_offset_zmin += layer["height"]
+          via_zmax = via_offset_zmin + (metal_offset_in_die if i == len(stack_layers) - 1 else 0.0)
           via_el = ET.SubElement(base_layers_el, "Layer")
           via_el.set("Name", via_name)
           via_el.set("Type", "VIA")
@@ -694,9 +761,8 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
           via_el.set("Layer", str(layer["gds_layer"]))
           via_el.set("Reference", bondline_name)
           via_el.set("ReferenceEdge", "Bottom")
-          via_el.set("Zmin", f"{via_offset_zmin:.4f}")
-          via_el.set("Zmax", f"{via_offset_zmin + layer['height']:.4f}")
-          via_offset_zmin += layer["height"]
+          via_el.set("Zmin", f"{via_zmin:.4f}")
+          via_el.set("Zmax", f"{via_zmax:.4f}")
 
         current_reference = bondline_name
         current_edge = "Top"
@@ -716,7 +782,6 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
     #      merge_chiplet_stackup.py's own approach, rather than trying to preserve/rewrite the
     #      chiplet's original Reference graph, which strip_outer_air_dielectrics()/
     #      reverse_stackup_z_order() only maintain at the resolved-object level ----
-    ordered_dielectrics = sorted(chip_dielectrics.dielectrics, key=lambda d: d.zmin)
     dielectric_new_names = {}
     for dielectric in ordered_dielectrics:
       new_name = renamer.rename_dielectric(dielectric.name)

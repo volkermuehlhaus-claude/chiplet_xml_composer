@@ -68,6 +68,12 @@ Here is what happens for each die:
    ReferenceEdge="Bottom"`. A bump or pillar physically sits inside its surrounding underfill,
    not above it.
 
+   The via chain's own two outer ends reach past the bondline's own Bottom/Top, into whichever
+   Dielectric sits on the other side - down into the interposer's own outer passivation, and up
+   into the die's own outer passivation - so the via actually touches the real pad metal on each
+   side, not just the passivation surface. See
+   [Connection-stack pad-to-pad anchoring](#connection-stack-pad-to-pad-anchoring).
+
    Neither the bondline's material nor any via layer's material can come from a `--stackup`
    input file. A bump or pillar material, and the material bonding it in place, aren't
    physically part of either the interposer's or the die's own stackup - so this tool never
@@ -75,9 +81,9 @@ Here is what happens for each die:
    new `<Material>` element the first time each name is needed in this `compose()` run. See
    [Connection-material sourcing and deduplication](#connection-material-sourcing-and-deduplication).
 
-   Each via is `Reference`d off the bondline's own Bottom edge. This is numerically identical
-   to referencing the attach point's Top edge directly, since the bondline's `zmin` is the
-   attach point's `zmax`. The reason for going through the bondline is that it keeps the via's
+   Each via is `Reference`d off the bondline's own Bottom edge. Its `Zmin=`/`Zmax=` are no
+   longer simply `0` and the bondline's own thickness, though - see the next section. Going
+   through the bondline (rather than referencing the attach point directly) keeps the via's
    Reference chain inside the chiplet's own subtree. See
    [Chiplet detection: branch points, not just attachments](#chiplet-detection-branch-points-not-just-attachments)
    for why that distinction matters.
@@ -143,6 +149,59 @@ Mirroring around that surface has a useful side effect. The die's own first rema
 Dielectric lands with its `zmin` exactly at the pivot. In the `SG13G2_die.xml` fixture, that
 Dielectric is `Passive`. It is then ready to Reference-chain directly onto the bondline, with
 zero extra offset arithmetic.
+
+### Connection-stack pad-to-pad anchoring
+
+A `connection_stack`'s declared total height - the sum of every layer's `height`, from
+`interconnect_methods.json` - is a real bump/pillar height. It's a pad-to-pad measurement: the
+distance a real Cu-pillar or solder bump actually stands between two metal pads. It is not the
+distance between the interposer's own `--attach` Dielectric edge and the die's own outermost
+Dielectric edge - a real stackup almost always has some passivation, or other dielectric,
+between an outer Dielectric edge and the actual metal pad underneath it. `interposer_IntM4TM2.xml`
+has 0.4 µm of `iPassive` sitting on top of `iTopMetal2`, for example.
+
+Treating the connection stack's height as if it spanned dielectric-edge to dielectric-edge would
+silently overstate the real gap by however thick each side's passivation is - 1.9 µm too much on
+each side, in this repo's own examples (0.4 µm of `iPassive`, plus a further 1.5 µm of `iSiO2`
+above `iTopMetal2`, on the interposer side; a matching 0.4 µm of `Passive` plus 1.5 µm of `SiO2`
+above `TopMetal2` on the die side, once flipped). So `compose()` anchors the via chain to the
+real pad metal on each side instead:
+
+- **The interposer's own topmost metal** - the non-sheet `Layer` with the highest resolved
+  `zmax`, among the interposer's own metals only (never a metal an earlier die in this same
+  `compose()` run already added - see the note on `base_metals` below).
+- **The die's own bottommost metal** - the non-sheet `Layer` with the lowest resolved `zmin`,
+  among this die's own metals, after AIR-stripping and any flip-chip reversal.
+
+A `Type="sheet"` Layer (a zero-thickness idealized boundary condition, e.g. a PEC ground plane)
+is excluded from both searches - it's never a real bond pad, even if it happens to be the
+outermost element.
+
+The bondline Dielectric itself, and the die's own first Dielectric right above it, are left
+completely alone - still `Reference`d with a plain `Thickness=`, exactly as if no passivation
+existed. Only the via chain's own two outer ends move:
+
+- The first via layer's `Zmin=` is pulled down by `attach_dielectric.zmax - interposer_top_metal.zmax`
+  (the interposer-side passivation depth) - past the bondline's own `Bottom` edge, into whichever
+  Dielectric sits below `--attach`'s target.
+- The last via layer's `Zmax=` is pushed up by `chip_bottom_metal.zmin - chip_first_dielectric.zmin`
+  (the die-side passivation depth) - past the bondline's own `Top` edge, into the die's own first
+  Dielectric.
+
+This means the via now overlaps, in z, with a Dielectric other than the bondline it's
+`Reference`d to. That's not a conflict - a via/metal Layer embedded inside its surrounding
+Dielectric is the normal case throughout this whole file format (`iTopMetal2` sits embedded
+inside `iSiO2` the same way). `find_z_overlaps()` only ever flags two **Dielectrics** whose
+resolved z-ranges overlap, never a Layer overlapping one - which is exactly why the bondline and
+the die's own first Dielectric are left unshifted: shifting either of *those* instead would
+create precisely the Dielectric-vs-Dielectric overlap `find_z_overlaps()` exists to catch. See
+[Built-in post-write verification](#built-in-post-write-verification).
+
+`base_metals` - the interposer's own materials/dielectrics/metals - is parsed once, from the
+interposer's own stackup XML, before any die is processed. Every die's own connection stack
+anchors to that same, original parse, never to a metal an earlier die in a multi-die assembly
+(like this repo's example 3) already added - two dies attached to the same interposer Dielectric
+both anchor to the same real interposer pad, independent of `.chiplet` component order.
 
 ### Name/GDS-layer collision avoidance
 
@@ -278,8 +337,16 @@ tracing an unexpected output back to a specific step):
 
 ```
 parse interposer stackup XML -> base_root
+(base_materials, base_dielectrics, base_metals) = parse_substrate(base_root)
+    # parsed once, before any die is processed - every die's own connection stack anchors to
+    # this same original parse, never to a metal an earlier die in this run already added
 renamer = NameRenamer(base_root)   # seeds name sets + used GDS layers from base_root
 added_connection_material_names = {}   # shared across every die in this compose() run
+
+# topmost_metal(metals)/bottommost_metal(metals), called below:
+#   candidates = [m for m in metals.metals if not m.is_sheet]   # Type="sheet" is never a real pad
+#   raise ComposeError if candidates is empty
+#   return max(candidates, key=zmax) / min(candidates, key=zmin)
 
 # ensure_connection_material(name), called below:
 #   if name in added_connection_material_names: return          # already synthesized, reuse it
@@ -317,13 +384,26 @@ for each die component (in .chiplet components[] order):
             bondline = new Dielectric(Reference=current_ref, ReferenceEdge="Top",
                                        Thickness=total_height, Boundary=boundary,
                                        Material=bondline_material)
+            # pad-to-pad anchoring: the via chain's own two outer ends reach past the bondline
+            # itself, into the real pad metal on each side - see HOW_IT_WORKS.md's own
+            # "Connection-stack pad-to-pad anchoring" section for the physical reasoning. Neither
+            # the bondline nor the die's own first Dielectric (below) is ever shifted - only the
+            # via Layers move, since a Layer overlapping a neighboring Dielectric is normal, but
+            # two Dielectrics overlapping is exactly what find_z_overlaps() flags.
+            attach_dielectric = base_dielectrics.get_by_name(current_ref)  # ComposeError if None
+            interposer_top_metal = topmost_metal(base_metals)              # excludes Type="sheet"
+            chip_bottom_metal = bottommost_metal(metals)                   # this die's own, post-flip
+            gap_below_attach = attach_dielectric.zmax - interposer_top_metal.zmax
+            metal_offset_in_die = chip_bottom_metal.zmin - min(dielectrics.dielectrics, key=zmin).zmin
+
             offset = 0
-            for layer in stack:
+            for i, layer in enumerate(stack):
                 ensure_connection_material(layer.material)   # see below
-                new Layer(Type="VIA", Material=layer.material, Layer=layer.gds_layer,
-                          Reference=bondline, ReferenceEdge="Bottom",
-                          Zmin=offset, Zmax=offset+layer.height)
+                zmin = offset - (gap_below_attach if i == 0 else 0)
                 offset += layer.height
+                zmax = offset + (metal_offset_in_die if i == len(stack) - 1 else 0)
+                new Layer(Type="VIA", Material=layer.material, Layer=layer.gds_layer,
+                          Reference=bondline, ReferenceEdge="Bottom", Zmin=zmin, Zmax=zmax)
             current_ref, current_edge = bondline, "Top"
 
     copy every <Material> from chip_root -> base_root, renaming on collision
@@ -358,6 +438,7 @@ return base_root (as an ElementTree)
 | `flip_chip` handling | `strip_outer_air_dielectrics()` returned `[]` (no AIR found to expose a pivot) |
 | `connection:` resolution | `die.connection` not in `interconnect_methods["methods"]`, or a `connection_stack` layer name not in `interconnect_methods["layer_registry"]` |
 | Bondline construction | `total_height > 0` and `boundary_layer_map` has no entry for `component.id` |
+| Pad-to-pad anchor lookup | `--attach`'s target isn't a real `<Dielectric>` in the interposer's own stackup, or either `topmost_metal()`/`bottommost_metal()` finds zero non-sheet metals in the interposer's or this die's own stackup |
 | Connection-material check (bondline and each via layer) | the named material has no entry in `connection_materials["materials"]`, or it collides with a same-named `<Material>` already present from a `--stackup` input |
 | `--connection-materials` requirement (once, before the loop) | any component declares a non-empty `connection` and `--connection-materials` was not given |
 | Component selection (once, before the loop) | `components[]` has zero or 2+ entries with `type == "interposer"` |
