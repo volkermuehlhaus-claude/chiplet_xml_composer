@@ -18,8 +18,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/VolkerMuehlhaus/chiplet_xml_composer"
-Repository = "https://github.com/VolkerMuehlhaus/chiplet_xml_composer"
+Homepage = "https://github.com/volkermuehlhaus-claude/chiplet_xml_composer"
+Repository = "https://github.com/volkermuehlhaus-claude/chiplet_xml_composer"
 
 [project.scripts]
 chiplet_xml_composer = "chiplet_xml_composer.composer:main"

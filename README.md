@@ -26,9 +26,9 @@ programmatically).
 
 [`examples/`](examples/) has three worked examples, built on the real stackups in
 [`test_data/`](test_data/) (`interposer_IntM4TM2.xml`, an IHP interposer technology, and
-`SG13G2_die.xml`, an IHP SG13G2 die). Each example folder has its own `.chiplet` input and its
-own already-generated `combined.xml` output, so you can inspect a real result without running
-anything yourself:
+`SG13G2_die.xml`, an IHP SG13G2 die). Each example folder has its own `.chiplet` input, its own
+already-generated `combined.xml` output, and a `combined_preview.png` stackup cross-section
+image, so you can inspect a real result without running anything yourself:
 
 - [`examples/01_direct_bond/`](examples/01_direct_bond/) - a die bonded directly to the
   interposer, no bump/pillar stack.

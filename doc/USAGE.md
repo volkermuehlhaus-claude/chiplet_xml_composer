@@ -83,6 +83,21 @@ Each example also ships its own `.chiplet` input file and its own already-genera
 output, under [`examples/`](../examples/). Open the output file directly to see exactly what the
 tool produced, or regenerate it yourself with the command shown.
 
+Every example below also ships a stackup cross-section preview PNG, so you can see the result
+without opening the XML yourself. These are rendered by
+[`tools/render_stackup_preview.py`](../tools/render_stackup_preview.py), reusing setupEM's own
+interactive "Stackup Preview" window's layout/paint engine
+(`setupEM.setup_common.compute_stackup_layout`/`render_stackup_layout`) headlessly - the exact
+same picture you'd see opening the file in setupEM's Stackup Editor. That script is a doc-generation
+tool, not part of the installed `chiplet_xml_composer` package - the package itself never depends
+on setupEM or PySide6.
+
+Both input stackups look like this on their own, before any merge:
+
+| `interposer_IntM4TM2.xml` | `SG13G2_die.xml` |
+|---|---|
+| ![interposer_IntM4TM2.xml cross section](../test_data/interposer_IntM4TM2_preview.png) | ![SG13G2_die.xml cross section](../test_data/SG13G2_die_preview.png) |
+
 #### 1. Minimal: a die bonded directly to the interposer, no bump/pillar stack
 
 This is the simplest case. The die has no `orientation:`, so it defaults to `face_up`. The die
@@ -145,6 +160,8 @@ Open [`examples/01_direct_bond/combined.xml`](../examples/01_direct_bond/combine
 result. The die's own dielectrics (`Substrate`, `EPI`, `SiO2`, `Passive`) now sit stacked directly
 on top of `iPassive`, bottom to top, in their original order - `Substrate`, the die's own bulk
 silicon, ends up right against the interposer, since nothing flipped it.
+
+![examples/01_direct_bond/combined.xml cross section](../examples/01_direct_bond/combined_preview.png)
 
 #### 2. Flip-chip die with a Cu-pillar connection stack
 
@@ -270,6 +287,12 @@ to see the result. Bottom to top, right above the interposer's own `iPassive`, y
   `Substrate` follow, in that order - `Substrate`, the bulk silicon, now ends up farthest from
   the interposer, exactly as a real flipped die would sit.
 
+![examples/02_flip_chip_cupillar/combined.xml cross section](../examples/02_flip_chip_cupillar/combined_preview.png)
+
+Compare this to `SG13G2_die.xml`'s own cross section, above: `Substrate` was at the bottom there,
+right after the stripped `AIR`; here it's at the top, farthest from the interposer. That's
+`orientation: flip_chip`'s z-reversal, visible directly in the picture.
+
 #### 3. Two dies of the same technology on one interposer
 
 A second die needs nothing extra beyond another `--attach`/`--boundary-layer` pair.
@@ -342,6 +365,26 @@ The `CuPillar`, `SnAgSolder`, and `Underfill` `<Material>` entries are shared th
 `chiplet_xml_composer` adds each one once, the first time either die needs it, and reuses it for
 the second die rather than creating a renamed duplicate. Open the combined file and confirm it
 for yourself: exactly one `<Material Name="CuPillar">`, not two.
+
+A stackup cross-section preview can only show one traversal through the Reference chain at a
+time, so a stackup with 2+ detected chiplets gets two kinds of preview instead of one: one cross
+section per chiplet (interposer plus that one die's own branch), and a separate "topology
+overview" sketch showing every chiplet side by side on the shared interposer base (not to scale -
+see [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#chiplet-detection-branch-points-not-just-attachments)).
+
+`die1`'s own branch:
+
+![examples/03_two_dies/combined.xml cross section, die1's branch](../examples/03_two_dies/combined_preview_die1.png)
+
+`die2`'s own branch - notice the renamed Dielectric/Layer/Material names (`Passive2`, `Metal12`,
+...) and the shifted GDS layer numbers, but the *same* `CuPillar`/`SnAgSolder` bump layers on the
+*same* GDS layers 500/501 as `die1`:
+
+![examples/03_two_dies/combined.xml cross section, die2's branch](../examples/03_two_dies/combined_preview_die2.png)
+
+Topology overview, both dies side by side on the shared interposer:
+
+![examples/03_two_dies/combined.xml topology overview](../examples/03_two_dies/combined_preview_topology.png)
 
 ### Python API
 
