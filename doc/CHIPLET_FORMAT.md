@@ -1,6 +1,6 @@
 # What's read from `.chiplet`, `interconnect_methods.json`, and `connection_materials.json`
 
-`chiplet_xml_composer` reads only a narrow slice of the [`.chiplet` format](https://github.com/IHP-GmbH/chiplet-spec).
+`chiplet_xml_composer` reads only a narrow slice of the [`.chiplet` format](https://github.com/IHP-GmbH/chiplet-system-spec).
 It also reads two separate sidecar files: `interconnect_methods.json`, a registry that has a
 real counterpart in the `.chiplet` ecosystem, and `connection_materials.json`, a
 `chiplet_xml_composer`-specific file that does not.
@@ -46,7 +46,7 @@ Your `.chiplet` file can still include these fields. The tool just ignores them.
 ### What `connection_materials.json` actually is
 
 `interconnect_methods.json` is a real concept from the `.chiplet` ecosystem: IHP publishes an
-[example](https://github.com/IHP-GmbH/chiplet-spec/blob/dev/examples/interconnect_methods.json)
+[example](https://github.com/IHP-GmbH/chiplet-system-spec/blob/main/examples/interconnect_methods.json)
 of one. But that file, real or not, only ever *names* a material -
 `layer_registry.<name>.material`, `methods.<id>.connection_stack.layers[].material` are both
 just strings. It never carries a Conductivity or Permittivity for that name, and neither does
@@ -62,7 +62,9 @@ there to satisfy this tool, with no clear record of where their numbers came fro
 [`test_data/connection_materials.json`](../test_data/connection_materials.json) for the shape:
 each entry names a `"type"` (`"Conductor"` or `"Dielectric"`), the matching property
 (`"conductivity"` or `"permittivity"`/`"dielectric_loss_tangent"`), and a `"source"` string
-recording where the value came from.
+recording where the value came from. For thermal (Elmer) models, an entry also needs
+`"thermal_conductivity"` (W/mK). It is optional because EM models don't use it; a thermal model
+of the combined stackup stops with a message if a material has none.
 
 ### Read
 
@@ -71,7 +73,8 @@ recording where the value came from.
 | `components[].id` | Key for `--attach`/`--boundary-layer` mappings, and for auto-generated names (`<id>_bondline`, `<id>_<layer-name>`). |
 | `components[].type` | Selecting the one `interposer` component (the merge base) and every `die`/`die_array` component. See [Not read](#not-read-out-of-scope-for-v1) for `substrate`. |
 | `components[].technology` | Key into `--stackup` to find that component's own stackup XML. |
-| `components[].orientation` | `flip_chip` triggers outer-AIR stripping and z-mirroring. See [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#flip-chip-z-reversal). Any other value, including absent, is treated as a direct, unflipped attach. |
+| `components[].orientation` | `flip_chip` triggers outer-AIR stripping and z-mirroring. See [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#flip-chip-z-reversal). `face_up` or absent is a direct, unflipped attach. Any other value (e.g. `face_down`) is an error, as `coord_frame_contract.md` section 2.4 requires. |
+| `components[].dimensions.thickness` | Checked only: when it is non-zero, it is compared with the thickness of that component's stackup without AIR (both mean the body, Si + BEOL, in µm), and a difference is printed as a warning. `0` is the format's placeholder for "no data" and is not checked. It never sets a thickness; use `--variable` for that. |
 | `components[].connection` | Key into `interconnect_methods.json`'s `methods` map. Builds a bridging Dielectric and via Layer(s) if the resolved stack has nonzero height. Absent or empty means a direct bond, with no bridging layer at all. |
 
 | `interconnect_methods.json` field | Used for |
@@ -87,12 +90,14 @@ recording where the value came from.
 | `materials.<name>.conductivity` | Required when `type` is `"Conductor"`. Becomes `<Material Conductivity="...">`. |
 | `materials.<name>.permittivity` | Required when `type` is `"Dielectric"`. Becomes `<Material Permittivity="...">`. |
 | `materials.<name>.dielectric_loss_tangent` | Optional, only meaningful when `type` is `"Dielectric"`. Becomes `<Material DielectricLossTangent="...">` when present. |
+| `materials.<name>.thermal_conductivity` | Optional, W/mK, for either `type`. Becomes `<Material ThermalConductivity="...">` when present. Needed for thermal (Elmer) models. |
 | `materials.<name>.color` | Optional. Becomes `<Material Color="...">` when present. |
 | `materials.<name>.source` | Not read by the tool. It exists so a human can see where the value came from. Always fill it in anyway. |
 
 ### Not read (out of scope for v1)
 
-- `position`, `rotation`, `anchor`, `dimensions`. No XY placement or GDS assembly happens here.
+- `position`, `rotation`, `anchor`, `dimensions.width`/`height`. No XY placement or GDS assembly
+  happens here. (`dimensions.thickness` is read for a check only, see above.)
   See the module docstring in `composer.py` for the scope statement.
 - `technologies.<id>.stackup`. This is a path to a YAML layer-stackup file in IHP's own
   ecosystem. It uses a different schema than a gds2palace stackup XML. Use `--stackup` instead.
@@ -162,9 +167,10 @@ irrelevant here (e.g. a field of a block type that's skipped entirely).
 | `components[].layout`, `top_cell`, `cells` | no | GDS references; irrelevant to a Z-stack-only merge. |
 | `components[].position` | no | |
 | `components[].rotation` | no | |
-| `components[].orientation` | yes | Only the literal string `"flip_chip"` triggers z-reversal. Any other value, or absent, is treated as face-up (no reversal). The canonical vocabulary is `face_up`/`flip_chip`/`face_down`, but this tool only branches on `"flip_chip"` specifically - do not rely on it rejecting an unrecognized value. |
+| `components[].orientation` | yes | `"flip_chip"` triggers z-reversal; `"face_up"`, absent or null means no reversal. Any other value, `"face_down"` included, raises `ComposeError`: the canonical values are only `face_up` and `flip_chip` (`coord_frame_contract.md` section 2.4), and a face-down die is written `flip_chip`. |
 | `components[].connection` | yes | Falsy (absent, `None`, `""`) means "no bridging layer, direct bond." A non-empty value must resolve in `interconnect_methods.json`. |
-| `components[].dimensions` | no | |
+| `components[].dimensions.width` / `.height` | no | |
+| `components[].dimensions.thickness` | check only | Non-zero: compared with the stackup's thickness without AIR, after any `--variable` override; more than 1 nm apart gives a `WARNING:` line (CLI) or a warning in `compose(warnings=...)`. Never used as a value. |
 | `components[].attachment_surface_z` | no | |
 | `components[].io_pads` | no | |
 | `components[].metadata` | no | |
@@ -206,6 +212,7 @@ declares a non-empty `connection`.
 | `materials.<name>.conductivity` | yes, if `type == "Conductor"` | `ComposeError` if `type` is `"Conductor"` and this is absent. |
 | `materials.<name>.permittivity` | yes, if `type == "Dielectric"` | `ComposeError` if `type` is `"Dielectric"` and this is absent. |
 | `materials.<name>.dielectric_loss_tangent` | yes, if present | Optional even for a Dielectric. |
+| `materials.<name>.thermal_conductivity` | yes, if present | Optional, W/mK, any `type`. Written as `ThermalConductivity=`. Without it, an EM model works and a thermal model of the output does not. |
 | `materials.<name>.color` | yes, if present | Optional. |
 | `materials.<name>.source` | no | Documentation only; not read by `compose()`. Fill it in anyway. |
 | `description` (top-level) | no | Documentation only. |

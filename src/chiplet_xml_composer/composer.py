@@ -17,7 +17,7 @@
 #
 # chiplet_xml_composer: stitches several per-chiplet gds2palace stackup XML files into one
 # combined stackup XML, driven by an IHP .chiplet assembly YAML file - see
-# https://github.com/IHP-GmbH/chiplet-spec/blob/dev/docs/CHIPLET_FORMAT_SPEC.md
+# https://github.com/IHP-GmbH/chiplet-system-spec/blob/main/docs/CHIPLET_FORMAT_SPEC.md
 #
 # Generalizes the by-hand steps already proven out in
 # gds2palace_ihp_sg13g2/test_data/chiplet/merge_chiplet_stackup.py (attach one chiplet's own
@@ -60,9 +60,10 @@
 #   from chiplet_xml_composer import compose
 #   compose(chiplet_path=..., stackup_map=..., ...)
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 import argparse
+import ast
 import copy
 import json
 import os
@@ -139,6 +140,35 @@ def strip_outer_air_dielectrics (dielectrics_list):
   return [d.name for d in candidates]
 
 
+def _strip_interposer_outer_air (base_root, base_dielectrics):
+  """Remove the interposer's own outer AIR Dielectric(s) from its XML tree - same criterion as
+     strip_outer_air_dielectrics(): the topmost/bottommost Dielectric whose Material is AIR.
+     A standalone interposer stackup (e.g. IHP's IntM4TM2_FEM_250um.xml) has air above its
+     passivation, on the very Dielectric the dies attach to. Kept, it would sit beside every die
+     as a second branch on the attach Dielectric (detected as a chiplet of its own) and overlap
+     the dies in z. The air around the combined model comes from gds2palace's own air_around
+     setting instead. An AIR Dielectric that some other element references is kept: removing it
+     would leave that Reference= dangling.
+  Args:
+      base_root (xml.etree.ElementTree.Element): the interposer's stackup root - mutated
+      base_dielectrics (dielectric_layers_list): its parsed dielectrics - mutated the same way
+  Returns:
+      list of str: names of the Dielectric(s) removed
+  """
+  referenced = {el.get("Reference") for el in base_root.iter() if el.get("Reference")}
+  candidates = [d for d in base_dielectrics.dielectrics
+                if (d.is_top or d.is_bottom) and d.material == "AIR" and d.name not in referenced]
+  if not candidates or len(candidates) >= len(base_dielectrics.dielectrics):
+    return []
+  dielectrics_el = base_root.find("./ELayers/Dielectrics")
+  for dielectric in candidates:
+    for el in dielectrics_el.findall("Dielectric"):
+      if el.get("Name") == dielectric.name:
+        dielectrics_el.remove(el)
+    base_dielectrics.dielectrics.remove(dielectric)
+  return [d.name for d in candidates]
+
+
 def reverse_stackup_z_order (dielectrics_list, metals_list, pivot_z):
   """Mirror every Dielectric's and every Layer's resolved [zmin, zmax] around pivot_z, reversing
      the stack's build order while leaving every element's own thickness unchanged - e.g. what
@@ -208,7 +238,7 @@ def _load_chiplet_file (path):
 
 def _load_interconnect_methods (path):
   """Load an interconnect_methods.json registry (see
-     https://github.com/IHP-GmbH/chiplet-spec/blob/dev/examples/interconnect_methods.json) -
+     https://github.com/IHP-GmbH/chiplet-system-spec/blob/main/examples/interconnect_methods.json) -
      a plain JSON sidecar, not part of the .chiplet format itself; a component's `connection:`
      id is only meaningful together with this file (see the "methods" map).
   Args:
@@ -302,20 +332,20 @@ def _pick_die_components (chiplet_data):
 # -------------------- name/GDS-layer collision avoidance ---------------------------
 
 def _unique_name (existing_names, base):
-  """Same pattern as setupEM's stackupEditor._unique_name(): base if it's free, else
-     base2, base3, ... until one is.
+  """base if it's free, else base_2, base_3, ... until one is. The "_" keeps the counter
+     apart from the name (Metal4 -> Metal4_2, not Metal42).
   Args:
       existing_names (set of string): names already in use
       base (string): preferred name
   Returns:
-      string: base, or the first base<N> that's free
+      string: base, or the first base_<N> that's free
   """
   if base not in existing_names:
     return base
   n = 2
-  while f"{base}{n}" in existing_names:
+  while f"{base}_{n}" in existing_names:
     n += 1
-  return f"{base}{n}"
+  return f"{base}_{n}"
 
 
 def _element_names (root, tag):
@@ -360,6 +390,219 @@ def _pick_gds_layer_offset (chip_layer_numbers, used_layer_numbers):
   while chip_layer_numbers and any((n + offset) in used_layer_numbers for n in chip_layer_numbers):
     offset += 1000
   return offset
+
+
+# -------------------- variables and thermal tables ---------------------------
+#
+# A die's own <Materials> and <Tables> are copied into the combined file element by element, but
+# its <Variables> are not: the combined file keeps the interposer's own Variables only. So every
+# "="-expression in a copied die Material or Table is resolved to a plain value with that die's
+# own Variables at copy time - the same way its Dielectrics and Layers are already written from
+# resolved zmin/zmax/thickness. Otherwise a die Material such as ThermalConductivity="=k_metal"
+# would reference a variable the combined file doesn't define.
+
+def _resolved_variables (root):
+  """The fully resolved <Variables> of one stackup XML tree (empty if it has none)."""
+  variables = stackup_reader.variables_list()
+  for data in root.iter("Variable"):
+    variables.append(stackup_reader.variable(data))
+  variables.resolve_all()
+  return variables
+
+
+def _resolve_expressions (el, variables):
+  """Replace every "="-expression attribute of el (not its children) by its value."""
+  for key, raw in list(el.attrib.items()):
+    if isinstance(raw, str) and raw.startswith("="):
+      el.set(key, stackup_reader.resolve_attr(el, key, None, variables))
+
+
+def _expression_names (raw):
+  """The variable names a "="-expression attribute value references, with their byte spans in
+     the expression body (the text after "="), as (start, end, name) - same grammar as the
+     reader (gds2palace util_stackup_reader._expression_names()), which parses it with ast too."""
+  tree = ast.parse(raw[1:], mode="eval")
+  return [(n.col_offset, n.end_col_offset, n.id) for n in ast.walk(tree) if isinstance(n, ast.Name)]
+
+
+def _rename_in_expression (raw, renames):
+  """raw ("=..." expression) with every variable name in renames replaced, the rest of the text
+     untouched (only the name tokens' own spans are rewritten, not a re-print of the expression)."""
+  body = raw[1:].encode("utf-8")   # ast column offsets are UTF-8 byte offsets
+  for start, end, name in sorted(_expression_names(raw), reverse=True):
+    if name in renames:
+      body = body[:start] + renames[name].encode("utf-8") + body[end:]
+  return "=" + body.decode("utf-8")
+
+
+def _clean_interposer_variables (base_root, component_id):
+  """Keep the interposer's <Variables> working in the combined file, and only those still used.
+     The dies' own Variables are never copied (see above), so every Variable left is the
+     interposer's own: each one is renamed <component_id>_<name> (e.g. interposer_total_thickness),
+     so the combined file says which part it sets, and every "="-expression is updated to match.
+     A Variable that no expression uses any more, directly or through another Variable (e.g.
+     air_thickness once the interposer's outer AIR is removed), is dropped; <Variables> itself
+     is dropped when none is left.
+  Args:
+      base_root (xml.etree.ElementTree.Element): the combined file's root - mutated
+      component_id (string): the interposer component's id, used as the prefix
+  Returns:
+      dict: old name -> new name of every Variable kept
+  """
+  variables_el = base_root.find("./Variables")
+  if variables_el is None:
+    return {}
+  var_els = {el.get("Name"): el for el in variables_el.findall("Variable")}
+
+  # names used by every "=" attribute outside <Variables>, then everything those depend on
+  used = set()
+  for el in base_root.iter():
+    if el.tag == "Variable":
+      continue
+    for raw in el.attrib.values():
+      if isinstance(raw, str) and raw.startswith("="):
+        used.update(name for _, _, name in _expression_names(raw))
+  pending = list(used)
+  while pending:
+    value = var_els.get(pending.pop(), None)
+    raw = value.get("Value") if value is not None else None
+    if isinstance(raw, str) and raw.startswith("="):
+      for _, _, name in _expression_names(raw):
+        if name not in used:
+          used.add(name)
+          pending.append(name)
+
+  for name, el in var_els.items():
+    if name not in used:
+      variables_el.remove(el)
+  kept = [name for name in var_els if name in used]
+  if not kept:
+    base_root.remove(variables_el)
+    return {}
+
+  renames = {}
+  taken = set()
+  for name in kept:
+    renames[name] = _unique_name(taken, f"{component_id}_{name}")
+    taken.add(renames[name])
+  for el in base_root.iter():
+    for key, raw in list(el.attrib.items()):
+      if isinstance(raw, str) and raw.startswith("="):
+        el.set(key, _rename_in_expression(raw, renames))
+  for name in kept:
+    var_els[name].set("Name", renames[name])
+  return renames
+
+
+def _format_number (value):
+  """A variable value as written into the XML: 300.0 -> "300", 130.12000000000001 -> "130.12"."""
+  value = float(value)
+  return str(int(value)) if value.is_integer() else repr(round(value, 9))
+
+
+def _apply_variable_overrides (root, overrides, component_id, stackup_path):
+  """Set the Value of each overridden <Variable> in one component's own stackup tree, before
+     anything in it is resolved - so every later step (dielectrics, layers, materials, tables,
+     derived layers, bump anchoring, flip) reads the same values from this one tree.
+  Args:
+      root (xml.etree.ElementTree.Element): this component's own stackup root - mutated
+      overrides (dict): variable name -> value (a number, or a string that parses as one)
+      component_id (string), stackup_path (string): for error messages
+  Raises:
+      ComposeError: a name the stackup doesn't define, or a value that isn't a number
+  """
+  var_els = {el.get("Name"): el for el in root.iter("Variable")}
+  for name, value in overrides.items():
+    el = var_els.get(name)
+    if el is None:
+      raise ComposeError(
+          f'--variable {component_id}:{name}: the stackup of component "{component_id}" '
+          f'({os.path.basename(stackup_path)}) has no Variable "{name}" '
+          f'(it has: {", ".join(sorted(var_els)) or "none"})')
+    try:
+      el.set("Value", _format_number(value))
+    except (TypeError, ValueError):
+      raise ComposeError(f'--variable {component_id}:{name}={value}: the value must be a number')
+
+
+def _check_body_thickness (component, dielectrics_list, stackup_path, warnings):
+  """Compare a component's dimensions.thickness from the .chiplet file (its physical body, Si +
+     BEOL, in um) with the thickness of its stackup without AIR. 0 or absent is the format's
+     placeholder for "no thickness data" and is not checked. A difference is a warning, not an
+     error: either file may be the one to fix.
+  Args:
+      component (dict): the .chiplet component
+      dielectrics_list (dielectric_layers_list): its resolved dielectrics
+      stackup_path (string): for the message
+      warnings (list of string): mutated
+  """
+  try:
+    thickness = float((component.get("dimensions") or {}).get("thickness") or 0)
+  except (TypeError, ValueError):
+    return
+  if thickness <= 0:
+    return
+  body = sum(d.thickness for d in dielectrics_list.dielectrics if d.material != "AIR")
+  if abs(body - thickness) > 1e-3:
+    warnings.append(
+        f'component "{component["id"]}": dimensions.thickness in the .chiplet file is '
+        f'{thickness:g} um, but its stackup {os.path.basename(stackup_path)} is {body:.4f} um '
+        f'thick without AIR - correct the .chiplet file, or set the stackup\'s thickness with '
+        f'--variable {component["id"]}:<name>=<value>')
+
+
+def _table_points (table_el, variables):
+  """A thermal <Table>'s (temperature, value) points as floats, sorted by temperature - for
+     telling whether two tables of the same name hold the same data."""
+  points = []
+  for point in table_el.findall("Point"):
+    points.append((float(stackup_reader.resolve_attr(point, "Temperature", None, variables)),
+                   float(stackup_reader.resolve_attr(point, "Value", None, variables))))
+  return sorted(points)
+
+
+def _merge_thermal_tables (base_root, chip_root, chip_variables, table_points):
+  """Copy this die's own thermal <Tables> into the combined file.
+     A table with the same points as a table already in the combined file under its name (or a
+     renamed copy of it, Name_2, ...) is shared, not copied again: two dies of the same technology
+     need the silicon table once. A table whose name is taken by a table with different points
+     gets a new name (_unique_name(): Name_2, ...).
+  Args:
+      base_root (xml.etree.ElementTree.Element): the combined file's root - mutated
+      chip_root (xml.etree.ElementTree.Element): this die's own stackup root
+      chip_variables (variables_list): this die's own resolved Variables
+      table_points (dict): table name -> points of every table already in the combined file -
+        mutated
+  Returns:
+      dict: this die's table name -> its name in the combined file
+  """
+  renames = {}
+  chip_tables_el = chip_root.find("./Tables")
+  if chip_tables_el is None:
+    return renames
+  for table_el in chip_tables_el.findall("Table"):
+    new_el = copy.deepcopy(table_el)
+    for el in new_el.iter():
+      _resolve_expressions(el, chip_variables)
+    name = new_el.get("Name")
+    points = _table_points(new_el, chip_variables)
+    # the same table may already be here under its own name or a renamed copy of it (an
+    # earlier die of the same technology, when the interposer has a different table by that name)
+    same = [n for n in table_points
+            if (n == name or (n.startswith(name + "_") and n[len(name) + 1:].isdigit()))
+            and table_points[n] == points]
+    if same:
+      renames[name] = same[0]
+      continue
+    new_name = _unique_name(set(table_points), name)
+    new_el.set("Name", new_name)
+    base_tables_el = base_root.find("./Tables")
+    if base_tables_el is None:
+      base_tables_el = ET.SubElement(base_root, "Tables")
+    base_tables_el.append(new_el)
+    table_points[new_name] = points
+    renames[name] = new_name
+  return renames
 
 
 class _NameRenamer:
@@ -546,6 +789,9 @@ def _ensure_connection_material (base_materials_el, renamer, connection_material
         f'Material "{material_name}" (needed for {context}) has unsupported '
         f'"type": "{material_type}" in --connection-materials (must be "Conductor" or '
         f'"Dielectric")')
+  # optional: only thermal (Elmer) models need it, and they stop with a message if it's missing
+  if "thermal_conductivity" in spec:
+    el.set("ThermalConductivity", str(spec["thermal_conductivity"]))
   if "color" in spec:
     el.set("Color", spec["color"])
 
@@ -555,7 +801,7 @@ def _ensure_connection_material (base_materials_el, renamer, connection_material
 
 def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
              connection_materials_path=None, attach_map=None, boundary_layer_map=None,
-             bondline_material="Underfill"):
+             bondline_material="Underfill", variable_overrides=None, warnings=None):
   """Stitch every die component in a .chiplet assembly onto its interposer's stackup XML,
      producing one combined stackup XML tree.
   Args:
@@ -584,6 +830,14 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
       bondline_material (string, optional): Material name for each bridging Dielectric - looked
         up in connection_materials_path (default "Underfill" - see test_data/connection_materials.json
         for a sourced example)
+      variable_overrides (dict, optional): component id -> {variable name: value}, applied to
+        that component's own stackup before it is resolved. For the interposer the Variable
+        stays in the output (renamed <id>_<name>) with the new value; for a die the value is
+        used to resolve it (a die's Variables are never copied). Two dies of the same
+        technology can get different values.
+      warnings (list, optional): if given, non-fatal findings (e.g. a dimensions.thickness that
+        doesn't match the stackup) are appended to it as strings; otherwise they are issued
+        with Python's warnings.warn()
   Returns:
       xml.etree.ElementTree.ElementTree: the combined stackup, ready to write with
         stackup_reader-compatible structure (call .write(path, encoding="UTF-8",
@@ -594,10 +848,21 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
   """
   attach_map = attach_map or {}
   boundary_layer_map = boundary_layer_map or {}
+  variable_overrides = variable_overrides or {}
+  report_warnings = warnings is None
+  warnings = [] if warnings is None else warnings
+  warnings_start = len(warnings)
 
   chiplet_data = _load_chiplet_file(chiplet_path)
   interposer_component = _pick_interposer_component(chiplet_data)
   die_components = _pick_die_components(chiplet_data)
+
+  composed_ids = [interposer_component["id"]] + [die["id"] for die in die_components]
+  for component_id in variable_overrides:
+    if component_id not in composed_ids:
+      raise ComposeError(
+          f'--variable {component_id}:...: no interposer or die component "{component_id}" in '
+          f'the .chiplet file (components composed: {", ".join(composed_ids)})')
 
   interconnect_methods = None
   connection_materials = None
@@ -627,16 +892,41 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
   base_path = stackup_path_for(interposer_component)
   base_tree = ET.parse(base_path)
   base_root = base_tree.getroot()
+  interposer_overrides = variable_overrides.get(interposer_component["id"], {})
+  _apply_variable_overrides(base_root, interposer_overrides, interposer_component["id"], base_path)
   # parsed once, before any die is appended below, so a connection_stack's lower anchor (see
   # _topmost_metal() below) always resolves against the interposer's own original metals -
   # never against a metal an earlier die in this same compose() run just added
   _, base_dielectrics, base_metals = stackup_reader.parse_substrate(base_root)
+  _strip_interposer_outer_air(base_root, base_dielectrics)
+  _check_body_thickness(interposer_component, base_dielectrics, base_path, warnings)
+  # after the AIR removal, so a Variable only that AIR used is dropped too; the dies add no
+  # "=" expressions (theirs are resolved to numbers), so the result is final here
+  kept_variables = _clean_interposer_variables(base_root, interposer_component["id"])
+  for name in interposer_overrides:
+    if name not in kept_variables:
+      warnings.append(
+          f'--variable {interposer_component["id"]}:{name} has no effect: nothing in the combined '
+          f'file uses "{name}" (e.g. only the interposer\'s removed outer AIR did)')
 
   chip_roots_by_id = {}
   for die in die_components:
-    chip_roots_by_id[die["id"]] = ET.parse(stackup_path_for(die)).getroot()
+    chip_root = ET.parse(stackup_path_for(die)).getroot()
+    _apply_variable_overrides(chip_root, variable_overrides.get(die["id"], {}), die["id"],
+                              stackup_path_for(die))
+    chip_roots_by_id[die["id"]] = chip_root
+  # where each die's comment (its resolved Variables) goes: right after the interposer's
+  # <Variables>, or first - never before a generator-stamp comment, there is none (ET.parse
+  # drops comments)
+  variables_el = base_root.find("./Variables")
+  comment_index = list(base_root).index(variables_el) + 1 if variables_el is not None else 0
 
   renamer = _NameRenamer(base_root)
+  # thermal tables already in the combined file (the interposer's own), name -> points - see
+  # _merge_thermal_tables()
+  base_variables = _resolved_variables(base_root)
+  table_points = {t.get("Name"): _table_points(t, base_variables)
+                  for t in base_root.findall("./Tables/Table")}
   added_connection_material_names = set()  # shared across every die this compose() run - see
                                             # _ensure_connection_material()'s own docstring
   base_dielectrics_el = base_root.find("./ELayers/Dielectrics")
@@ -659,8 +949,16 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
     # ---- read and preprocess this chiplet's own resolved stackup ----
     _, chip_dielectrics, chip_metals = stackup_reader.parse_substrate(chip_root)
     strip_outer_air_dielectrics(chip_dielectrics)
+    _check_body_thickness(die, chip_dielectrics, stackup_path_for(die), warnings)
 
-    orientation = die.get("orientation", "face_up")
+    orientation = die.get("orientation") or "face_up"
+    if orientation not in ("face_up", "flip_chip"):
+      # coord_frame_contract.md section 2.4: only face_up (default) and flip_chip are canonical,
+      # and an exporter must reject anything else - treating e.g. "face_down" as face_up would
+      # silently give an unflipped die
+      raise ComposeError(
+          f'Component "{component_id}" has orientation: "{orientation}" - only "face_up" '
+          f'(default) and "flip_chip" are valid (use "flip_chip" for a die mounted face-down)')
     if orientation == "flip_chip":
       # pivot at this stack's own current topmost surface. If it had an outer AIR dielectric,
       # the line above already removed it, so this is the real dielectric that used to sit
@@ -774,14 +1072,40 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
         current_reference = bondline_name
         current_edge = "Top"
 
-    # ---- Materials: copy every Material this chiplet defines, renaming on collision ----
+    # ---- thermal Tables: copied (or shared when identical) before the Materials that use them ----
+    chip_variables = _resolved_variables(chip_root)
+    # this die's Variables are not copied, its thicknesses are written as numbers: record the
+    # values they were resolved with, so the combined file says where its numbers come from
+    values = chip_variables.as_dict()
+    if values:
+      die_overrides = variable_overrides.get(component_id, {})
+      listed = ", ".join(
+          f'{name}={_format_number(value) if isinstance(value, (int, float)) else value}'
+          + (" (override)" if name in die_overrides else "")
+          for name, value in values.items())
+      text = (f' {component_id}: {os.path.basename(stackup_path_for(die))} resolved with its '
+              f'Variables {listed} ')
+      # "--" is not allowed inside an XML comment (e.g. from a file name)
+      while "--" in text:
+        text = text.replace("--", "- -")
+      base_root.insert(comment_index, ET.Comment(text))
+      comment_index += 1
+    table_renames = _merge_thermal_tables(base_root, chip_root, chip_variables, table_points)
+
+    # ---- Materials: copy every Material this chiplet defines, renaming on collision, with its
+    #      "="-expressions resolved (this chiplet's Variables are not copied) and its
+    #      ThermalConductivityTable= pointing at the table's name in the combined file ----
     chip_materials_el = chip_root.find("./Materials")
     if chip_materials_el is not None:
       for mat_el in chip_materials_el:
         old_name = mat_el.get("Name")
         new_name = renamer.rename_material(old_name)
         new_el = copy.deepcopy(mat_el)
+        _resolve_expressions(new_el, chip_variables)
         new_el.set("Name", new_name)
+        table_name = new_el.get("ThermalConductivityTable")
+        if table_name in table_renames:
+          new_el.set("ThermalConductivityTable", table_renames[table_name])
         base_materials_el.append(new_el)
 
     # ---- Dielectrics: Reference-chained onto the bondline (or attach point directly, for
@@ -846,12 +1170,18 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
         base_derived_el = ET.SubElement(base_root.find("./ELayers"), "DerivedLayers")
       for dl_el in chip_derived_el:
         new_el = copy.deepcopy(dl_el)
+        for el in new_el.iter():
+          _resolve_expressions(el, chip_variables)
         new_el.set("Name", renamer.rename_layer(new_el.get("Name")))
         new_el.set("Layer", str(int(new_el.get("Layer")) + gds_offset))
         for operand_el in new_el.findall("Operand"):
           operand_el.set("Layer", str(int(operand_el.get("Layer")) + gds_offset))
         base_derived_el.append(new_el)
 
+  if report_warnings:
+    import warnings as _warnings   # the parameter shadows the module name here
+    for message in warnings[warnings_start:]:
+      _warnings.warn(message, stacklevel=2)
   return base_tree
 
 
@@ -870,11 +1200,25 @@ def _kv_action (what):
   return _Action
 
 
+class _VariableAction (argparse.Action):
+  """--variable COMPONENT_ID:NAME=VALUE, repeatable -> {component_id: {name: value}}."""
+  def __call__ (self, parser, namespace, values, option_string=None):
+    target, value = _parse_kv(values, "COMPONENT_ID:NAME=VALUE")
+    if ":" not in target:
+      raise argparse.ArgumentError(self, f'expected COMPONENT_ID:NAME=VALUE, got "{values}"')
+    component_id, name = target.split(":", 1)
+    try:
+      number = float(value)
+    except ValueError:
+      raise argparse.ArgumentError(self, f'"{values}": the value must be a number')
+    getattr(namespace, self.dest).setdefault(component_id, {})[name] = number
+
+
 def main (argv=None):
   parser = argparse.ArgumentParser(
       description="Stitch several per-chiplet stackup XML files into one combined stackup "
                   "XML, driven by a .chiplet assembly file (see "
-                  "https://github.com/IHP-GmbH/chiplet-spec).")
+                  "https://github.com/IHP-GmbH/chiplet-system-spec).")
   parser.add_argument("--chiplet-file", required=True, help="path to the .chiplet assembly file")
   parser.add_argument("--stackup", metavar="TECH=PATH", action=_kv_action("TECH=PATH"),
                        default={}, dest="stackup_map",
@@ -900,6 +1244,10 @@ def main (argv=None):
   parser.add_argument("--bondline-material", default="Underfill",
                        help='Material name for each bridging Dielectric, looked up in '
                             '--connection-materials (default: "Underfill")')
+  parser.add_argument("--variable", metavar="COMPONENT_ID:NAME=VALUE", action=_VariableAction,
+                       default={}, dest="variable_overrides",
+                       help="override a <Variable> of one component's own stackup before it is "
+                            "resolved, e.g. die1:total_thickness=150, repeatable")
   parser.add_argument("-o", "--output", required=True, help="path to write the combined stackup XML to")
   args = parser.parse_args(argv)
 
@@ -911,8 +1259,10 @@ def main (argv=None):
   print("  interconnect methods: ", args.interconnect_methods)
   print("  connection materials: ", args.connection_materials)
   print("  bondline material:    ", args.bondline_material)
+  print("  variable overrides:   ", args.variable_overrides)
   print("  output:               ", args.output)
 
+  compose_warnings = []
   try:
     boundary_layer_map = {k: int(v) for k, v in args.boundary_layer_map.items()}
     tree = compose(
@@ -923,6 +1273,8 @@ def main (argv=None):
         attach_map=args.attach_map,
         boundary_layer_map=boundary_layer_map,
         bondline_material=args.bondline_material,
+        variable_overrides=args.variable_overrides,
+        warnings=compose_warnings,
     )
   except ComposeError as e:
     print(f"ERROR: {e}")
@@ -943,6 +1295,8 @@ def main (argv=None):
     print("  WARNING:", warning)
   if not overlaps and not missing_boundaries:
     print("  no z-overlaps, no missing chiplet boundaries")
+  for warning in compose_warnings:
+    print("  WARNING:", warning)
 
   return 0
 

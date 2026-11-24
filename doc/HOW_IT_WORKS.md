@@ -20,6 +20,13 @@ algorithm. Use it when debugging an unexpected output or extending the tool.
 turn. For each die, it appends new `<Dielectric>`, `<Layer>`, and `<Material>` elements directly
 into the interposer's own tree.
 
+Before the first die, the interposer's own outer `AIR` Dielectric is removed, by the same rule as
+a die's in step 2 below. A standalone interposer stackup has air above its passivation, on the
+very Dielectric the dies attach to. Kept, it would sit beside every die as a second branch on
+that Dielectric, be detected as a chiplet of its own, and overlap the dies. The air around the
+combined model comes from gds2palace's `air_around` setting instead. An `AIR` Dielectric that
+another element references is kept.
+
 Here is what happens for each die:
 
 1. **Parse the die's own stackup XML.** This uses `gds2palace.stackup_reader.parse_substrate()`,
@@ -68,7 +75,7 @@ Here is what happens for each die:
    One `<Layer Type="VIA">` is created per `connection_stack` entry. Each one sits on its own
    real GDS layer, from `interconnect_methods.json`'s `layer_registry`. Each one is embedded
    within the bondline's own z-range, not stacked on top of it. `interposer_IntM4TM2.xml`'s own
-   `iMetal4` works the same way: it sits embedded inside `iSiO2`, using `Reference="iSiO2"
+   `Metal4` works the same way: it sits embedded inside `SiO2`, using `Reference="SiO2"
    ReferenceEdge="Bottom"`. A bump or pillar physically sits inside its surrounding underfill,
    not above it.
 
@@ -111,7 +118,7 @@ Here is what happens for each die:
 6. **Rename on collision, and shift GDS layer numbers.** Every Material, Dielectric, and Layer
    name this die introduces gets checked. The check is against every name already used, by the
    interposer and by every earlier die. A colliding name gets a unique suffix, for example
-   `IMD` becomes `IMD2`. See
+   `IMD` becomes `IMD_2`. See
    [Name/GDS-layer collision avoidance](#namegds-layer-collision-avoidance).
 
    Every native GDS layer number in this die's own stackup XML gets shifted too. The shift is a
@@ -125,6 +132,9 @@ Here is what happens for each die:
 7. **Copy DerivedLayers, if any.** Their target `Layer=` and every `Operand Layer=` get shifted
    by the same offset as step 6. A `DerivedLayer` has no z-position of its own. It is a pure
    GDS-plane boolean operation on other layer numbers. Steps 2 and 3 never need to touch it.
+
+Steps 6 and 7 also copy the die's thermal tables and resolve its `=` expressions. See
+[Variables and thermal tables](#variables-and-thermal-tables).
 
 After every die is processed, `compose()` returns the mutated interposer tree.
 
@@ -163,13 +173,13 @@ distance a real Cu-pillar or solder bump actually stands between two metal pads.
 distance between the interposer's own `--attach` Dielectric edge and the die's own outermost
 Dielectric edge - a real stackup almost always has some passivation, or other dielectric,
 between an outer Dielectric edge and the actual metal pad underneath it. `interposer_IntM4TM2.xml`
-has 0.4 µm of `iPassive` sitting on top of `iTopMetal2`, for example.
+has 0.4 µm of `Passive` and 1.5 µm of `SiO2` above its `TopMetal2`, for example.
 
 Treating the connection stack's height as if it spanned dielectric-edge to dielectric-edge would
 silently overstate the real gap by however thick each side's passivation is - 1.9 µm too much on
-each side, in this repo's own examples (0.4 µm of `iPassive`, plus a further 1.5 µm of `iSiO2`
-above `iTopMetal2`, on the interposer side; a matching 0.4 µm of `Passive` plus 1.5 µm of `SiO2`
-above `TopMetal2` on the die side, once flipped). So `compose()` anchors the via chain to the
+each side, in this repo's own examples (0.4 µm of `Passive`, plus a further 1.5 µm of `SiO2`
+above `TopMetal2`, on the interposer side; a matching 0.4 µm of passivation plus 1.5 µm of oxide
+above the die's own `TopMetal2` on the die side, once flipped). So `compose()` anchors the via chain to the
 real pad metal on each side instead:
 
 - **The interposer's own topmost metal** - the non-sheet `Layer` with the highest resolved
@@ -195,8 +205,8 @@ existed. Only the via chain's own two outer ends move:
 
 This means the via now overlaps, in z, with a Dielectric other than the bondline it's
 `Reference`d to. That's not a conflict - a via/metal Layer embedded inside its surrounding
-Dielectric is the normal case throughout this whole file format (`iTopMetal2` sits embedded
-inside `iSiO2` the same way). `find_z_overlaps()` only ever flags two **Dielectrics** whose
+Dielectric is the normal case throughout this whole file format (the interposer's `TopMetal2`
+sits embedded inside its `SiO2` the same way). `find_z_overlaps()` only ever flags two **Dielectrics** whose
 resolved z-ranges overlap, never a Layer overlapping one - which is exactly why the bondline and
 the die's own first Dielectric are left unshifted: shifting either of *those* instead would
 create precisely the Dielectric-vs-Dielectric overlap `find_z_overlaps()` exists to catch. See
@@ -227,8 +237,8 @@ For each die, in order:
   per-chiplet rename cache first. This way, the same original name always maps to the same new
   name within one die. That matters because a name gets renamed once, then looked up again
   later for a `Material=` or `Reference=` pointer. If a name isn't in the cache yet, it gets the
-  first free variant: `name`, then `name2`, then `name3`, and so on. This is the same pattern
-  setupEM's own `_unique_name()` uses.
+  first free variant: `name`, then `name_2`, then `name_3`, and so on. The `_` keeps the counter
+  apart from the name: `Metal4_2`, not `Metal42`, which would read like a layer of its own.
 
 ### Connection-material sourcing and deduplication
 
@@ -256,6 +266,58 @@ from whichever die happened to define a same-named `<Material>` first, depending
 component order. That's exactly the kind of hidden, order-dependent data source this design
 exists to rule out - see [`CHIPLET_FORMAT.md`](CHIPLET_FORMAT.md#what-connection_materialsjson-actually-is).
 
+### Variables and thermal tables
+
+**The dies' variables are resolved, not copied.** A die's dielectrics and layers are written
+from resolved numbers (step 5), in a new Reference chain. A die variable copied along would not
+reach those numbers: changing a die's `total_thickness` in the combined file would resize its
+substrate dielectric but leave layers such as its `LBE` and `BACKSIDEGND` where they were. So
+every `=` expression in what is copied from a die is resolved with that die's own variables
+first. This covers its `<Material>` attributes (e.g. `ThermalConductivity="=k_metal"` becomes
+`237`), its thermal table points and its DerivedLayers. The combined file has no die variable and
+no expression that points at one: a die's thickness is fixed when the file is composed.
+
+To compose a die with other values, `--variable die1:total_thickness=150` sets the variable in
+that die's own parsed stackup tree before anything in it is resolved. Every later step reads
+from that one tree - dielectrics, layers, materials, tables, derived layers, the bump anchor and
+the flip - so they can't disagree. Each die gets an XML comment after `<Variables>` that lists
+the values it was resolved with, overrides marked `(override)`.
+
+**The interposer's variables stay working.** The interposer is the base: its elements are kept
+as they are, expressions included, and every die is chained on top of it. Changing an interposer
+variable therefore moves the dies with it, as in its own file. In the combined file:
+
+- **Renamed with the component id:** each one becomes `<id>_<name>`, e.g.
+  `interposer_total_thickness`, and every expression is updated to match. The combined file holds
+  several parts, and a plain `total_thickness` would not say which one it sets. Only the name
+  tokens are rewritten; the rest of each expression is kept as written.
+- **Unused ones dropped:** a variable that no expression uses any more, directly or through
+  another variable, is removed. The interposer's `air_thickness` is the usual case: only its
+  outer `AIR` used it, and that is removed (see
+  [Pipeline, one die at a time](#pipeline-one-die-at-a-time)). With none left, `<Variables>` is
+  removed too.
+
+A `--variable interposer:total_thickness=300` sets the value before the merge, and a script can
+still override it when it reads the combined file, e.g.
+`stackup_reader.read_substrate(path, variable_overrides={'interposer_total_thickness': 300})`.
+
+**Thickness check.** `dimensions.thickness` in the `.chiplet` file is a component's body, Si +
+BEOL, in µm (`0` = no data). When it is set, it is compared with the stackup's resolved
+dielectrics without AIR, after overrides; a difference of more than 1 nm is a warning. It is
+never used as a value: the stackup variable that holds the thickness has no fixed name across
+technologies.
+
+A die's thermal tables (`<Tables>/<Table>`, used by `ThermalConductivityTable=`) are copied
+into the combined file's `<Tables>`:
+
+- **Same table already there:** a table with the same points under the same name, or under a
+  renamed copy of it (`Name_2`, ...), is shared. Two dies of the same technology need the silicon
+  table only once.
+- **Name taken by a different table:** the die's table gets a new name (`Name_2`, ...), the same
+  rule as for the other names, and the die's materials point at the new name.
+
+The interposer's own tables stay as they are.
+
 ### Why a fresh chain, not a rewritten one
 
 An earlier, hand-written prototype tried a different approach:
@@ -282,23 +344,22 @@ not enough - it's an ordinary attachment, not a branch.
 This has a direct, sometimes surprising consequence: attaching a single die to an interposer
 Dielectric that nothing else references yet detects **zero chiplets**, even though a die was
 just bonded on. This is exactly what happens in this repo's own examples 1 and 2 (see
-[`USAGE.md`](USAGE.md)): `die1_bondline` is `iPassive`'s only referrer, so `iPassive` never
+[`USAGE.md`](USAGE.md)): `die1_bondline` is `Passive`'s only referrer, so `Passive` never
 becomes a branch point, and `chiplet_groups.chiplets` comes back empty. This is not a bug -
 `detect_chiplet_groups()` is answering "does this stackup branch into multiple chiplets
 anywhere," and a single attached die, on its own, doesn't.
 
-Attach a *second* die to the same Dielectric, as example 3 does, and `iPassive` gets a second
+Attach a *second* die to the same Dielectric, as example 3 does, and `Passive` gets a second
 referrer. It becomes a branch point, and both referrers - `die1_bondline` and `die2_bondline` -
 get reported as chiplets.
 
 The same rule can also produce a *third*, unexpected chiplet, if the interposer's own stackup
 XML already has some other Dielectric referencing the same attach point before you ever run
 this tool. That pre-existing Dielectric becomes a chiplet root too, purely because it now shares
-a branch point with your new bondline - not because anything about it changed. This isn't
-something the examples in this repo trigger (`interposer_IntM4TM2.xml`'s own `iPassive` has no
-other referrer to begin with), but it's a property of the shared detection algorithm worth
-knowing if your own interposer file already Reference-chains something onto the same Dielectric
-you pass to `--attach`.
+a branch point with your new bondline - not because anything about it changed. The interposer's
+own outer `AIR` is the common case, and `compose()` removes it (see
+[Pipeline, one die at a time](#pipeline-one-die-at-a-time)). Anything else that your interposer
+file Reference-chains onto the Dielectric you pass to `--attach` still becomes a chiplet root.
 
 Either way, chiplet detection only affects the Stackup Editor's preview and chiplet-switcher UI.
 It never affects meshing or simulation correctness.
@@ -342,9 +403,19 @@ tracing an unexpected output back to a specific step):
 
 ```
 parse interposer stackup XML -> base_root
+apply variable_overrides[interposer.id] to base_root's <Variable Value=>   # ComposeError on an
+                                                                         # unknown name
 (base_materials, base_dielectrics, base_metals) = parse_substrate(base_root)
     # parsed once, before any die is processed - every die's own connection stack anchors to
     # this same original parse, never to a metal an earlier die in this run already added
+strip_interposer_outer_air(base_root, base_dielectrics)
+    # removes the <Dielectric> elements that are topmost/bottommost, Material AIR, and not the
+    # Reference= of any other element
+check_body_thickness(interposer, base_dielectrics)   # warning only
+clean_interposer_variables(base_root, interposer.id)
+    # used = names in every "=" attribute outside <Variables>, closed over the Variables'
+    # own "=" Values; drop every other Variable (and <Variables> if empty); rename each kept
+    # one to <id>_<name> (first free variant) in its Name= and in every "=" attribute
 renamer = NameRenamer(base_root)   # seeds name sets + used GDS layers from base_root
 added_connection_material_names = {}   # shared across every die in this compose() run
 
@@ -363,14 +434,17 @@ added_connection_material_names = {}   # shared across every die in this compose
 
 for each die component (in .chiplet components[] order):
     chip_root = parse(stackup_map[die.technology])
+    apply variable_overrides[die.id] to chip_root's <Variable Value=>   # before any resolving
     (materials, dielectrics, metals) = parse_substrate(chip_root)
 
     strip_outer_air_dielectrics(dielectrics)
+    check_body_thickness(die, dielectrics)   # warning only
     # removes dielectrics.dielectrics entries where (is_top or is_bottom) and material == "AIR"
     # no-op if none qualify - an outer AIR dielectric was never required to exist, only removed
     # if present, so the flip_chip branch below never checks or depends on this having done
     # anything
 
+    if die.orientation not in (None, "face_up", "flip_chip"): raise ComposeError
     if die.orientation == "flip_chip":
         pivot = max(d.zmax for d in dielectrics.dielectrics)
         reverse_stackup_z_order(dielectrics, metals, pivot)
@@ -418,7 +492,16 @@ for each die component (in .chiplet components[] order):
                           Reference=bondline, ReferenceEdge="Bottom", Zmin=zmin, Zmax=zmax)
             current_ref, current_edge = bondline, "Top"
 
-    copy every <Material> from chip_root -> base_root, renaming on collision
+    chip_variables = resolved <Variables> of chip_root   # never copied to base_root
+    insert <!-- die.id: file resolved with its Variables name=value, ... --> after <Variables>
+    for each <Table> in chip_root's <Tables>:
+        resolve its "=" expressions with chip_variables
+        if base_root has a Table with the same points named Name or Name<digits>: share it
+        else: append it to base_root's <Tables> (created if missing), renamed on collision
+
+    copy every <Material> from chip_root -> base_root, renaming on collision, its "="
+        expressions resolved with chip_variables, ThermalConductivityTable= set to the table's
+        name in base_root
 
     for dielectric in sorted(dielectrics.dielectrics, key=zmin):        # bottom-to-top
         new Dielectric(Reference=current_ref, ReferenceEdge=current_edge,
@@ -436,7 +519,7 @@ for each die component (in .chiplet components[] order):
                   Reference=..., ReferenceEdge=..., Zmin=metal.zmin - base, Zmax=metal.zmax - base)
 
     for each DerivedLayer in chip_root:
-        copy it, Layer += gds_offset, every Operand/Layer += gds_offset, rename on collision
+        copy it, "=" expressions resolved with chip_variables, Layer += gds_offset, every Operand/Layer += gds_offset, rename on collision
 
 return base_root (as an ElementTree)
 ```
@@ -447,6 +530,8 @@ return base_root (as an ElementTree)
 |---|---|
 | Technology lookup (any component) | `stackup_map` has no entry for `component.technology` |
 | Attach lookup (each die) | `attach_map` has no entry for `component.id` |
+| `variable_overrides` (before anything else) | a key is not the interposer's or a die's id, a variable name is not in that component's stackup, or a value is not a number |
+| Orientation (each die) | `orientation` is neither `face_up` (or absent) nor `flip_chip` |
 | `connection:` resolution | `die.connection` not in `interconnect_methods["methods"]`, or a `connection_stack` layer name not in `interconnect_methods["layer_registry"]` |
 | Bondline construction | `total_height > 0` and `boundary_layer_map` has no entry for `component.id` |
 | Pad-to-pad anchor lookup | `--attach`'s target isn't a real `<Dielectric>` in the interposer's own stackup, or either `topmost_metal()`/`bottommost_metal()` finds zero non-sheet metals in the interposer's or this die's own stackup |

@@ -1,7 +1,7 @@
 # Usage guide
 
 `chiplet_xml_composer` stitches several per-chiplet gds2palace stackup XML files into one
-combined stackup XML. An IHP [`.chiplet`](https://github.com/IHP-GmbH/chiplet-spec) assembly
+combined stackup XML. An IHP [`.chiplet`](https://github.com/IHP-GmbH/chiplet-system-spec) assembly
 file drives the merge.
 
 The combined XML is an ordinary [gds2palace](https://github.com/VolkerMuehlhaus/gds2palace_ihp_sg13g2)/openEMS
@@ -43,7 +43,7 @@ This installs the `chiplet_xml_composer` console script. It also installs two de
 `gds2palace` and `chiplet-format-io`.
 
 `chiplet-format-io` reads `.chiplet` YAML files. It is not on PyPI yet. It installs from a
-pinned commit of [IHP-GmbH/chiplet-spec](https://github.com/IHP-GmbH/chiplet-spec) instead. See
+pinned commit of [IHP-GmbH/chiplet-system-spec](https://github.com/IHP-GmbH/chiplet-system-spec) instead. See
 `pyproject.toml` for the exact commit.
 
 ### Command-line reference
@@ -55,6 +55,7 @@ chiplet_xml_composer --chiplet-file FILE --stackup TECH=PATH [--stackup TECH=PAT
                       [--connection-materials FILE]
                       [--boundary-layer COMPONENT_ID=GDSLAYER ...]
                       [--bondline-material NAME]
+                      [--variable COMPONENT_ID:NAME=VALUE ...]
                       -o OUTPUT.xml
 ```
 
@@ -62,10 +63,11 @@ chiplet_xml_composer --chiplet-file FILE --stackup TECH=PATH [--stackup TECH=PAT
 |---|---|---|---|
 | `--chiplet-file` | yes | no | Path to the `.chiplet` assembly YAML file. |
 | `--stackup` | yes, one per technology used | yes | `TECH=PATH`. Maps a `.chiplet` `technology:` id to your own gds2palace stackup XML file. This tool never reads the `.chiplet` file's own `technology.stackup` field. That field uses a different YAML schema. See [`CHIPLET_FORMAT.md`](CHIPLET_FORMAT.md). |
-| `--attach` | yes, one per die component | yes | `COMPONENT_ID=DIELECTRIC`. Names the Dielectric in the interposer's own stackup XML that this die attaches to. Example: `die1=iPassive`. |
+| `--attach` | yes, one per die component | yes | `COMPONENT_ID=DIELECTRIC`. Names the Dielectric in the interposer's own stackup XML that this die attaches to. Example: `die1=Passive`. |
 | `--interconnect-methods` | only if any component declares `connection:` | no | Path to an `interconnect_methods.json` registry. Required whenever a die has a `connection:`. The `.chiplet` file alone never gives a GDS layer number for a bump or pillar layer. See [`CHIPLET_FORMAT.md`](CHIPLET_FORMAT.md). |
 | `--connection-materials` | only if some component's `connection_stack` resolves to nonzero total height | no | Path to a `--connection-materials` sidecar JSON file. Not required just because `connection:` is used - a named, zero-height `connection_stack` creates no bondline and never reads this file. Supplies electrical/thermal properties for every `connection_stack` layer's material and for `--bondline-material`. Neither the `.chiplet` file nor `interconnect_methods.json` carries these properties. See [`CHIPLET_FORMAT.md`](CHIPLET_FORMAT.md). |
 | `--boundary-layer` | only for a die that gets a bridging Dielectric | yes | `COMPONENT_ID=GDSLAYER`. Sets the GDS layer number for that die's bridging Dielectric, also called the bondline. Its `Boundary=` attribute uses this number. Needed whenever `connection:` resolves to a nonzero total height. That means a real bump/pillar stack, not a direct bond. |
+| `--variable` | no | yes | `COMPONENT_ID:NAME=VALUE`. Overrides a `<Variable>` of that one component's own stackup before it is used, e.g. `die1:total_thickness=150` for a thinned die. Per component: two dies of the same technology can differ. For the interposer the variable stays in the output with the new value; for a die, its stackup is resolved with it. See [Variable overrides](#variable-overrides). |
 | `--bondline-material` | no | no | Material name for every bridging Dielectric this run creates. Default `"Underfill"`. Looked up in `--connection-materials`. See [Error messages](#error-messages-you-might-see). |
 | `-o`, `--output` | yes | no | Path to write the combined stackup XML to. |
 
@@ -76,8 +78,15 @@ per technology or component. Order does not matter.
 
 All three examples use the same two real stackups, shipped in [`test_data/`](../test_data/):
 
-- `interposer_IntM4TM2.xml` - a real IHP interposer technology (IntM4TM2).
-- `SG13G2_die.xml` - a real IHP SG13G2 die stackup.
+- `interposer_IntM4TM2.xml` - an IHP IntM4TM2 interposer, 250 µm, with thermal data.
+- `SG13G2_die.xml` - an IHP SG13G2 die, 200 µm, with thermal data and the `Si_vs_T_IHP`
+  silicon table.
+
+Both are copies of the gds2palace stackups `IntM4TM2_FEM_250um.xml` and `SG13G2_FEM_200um.xml`
+from `XML_stackup/latest/IHP/`. The only change is `Boundary="39"` (chip outline) on every
+Dielectric, so that the dies have an outline once they are chiplets. Both use the same native
+names (`Passive`, `SiO2`, `Metal4`, ...) and GDS layer numbers, so the composer renames and
+shifts the dies' copies (see example 3).
 
 Each example also ships its own `.chiplet` input file and its own already-generated `combined.xml`
 output, under [`examples/`](../examples/). Open the output file directly to see exactly what the
@@ -133,14 +142,14 @@ chiplet_xml_composer \
     --chiplet-file examples/01_direct_bond/assembly.chiplet \
     --stackup intm4tm2=test_data/interposer_IntM4TM2.xml \
     --stackup sg13g2=test_data/SG13G2_die.xml \
-    --attach die1=iPassive \
+    --attach die1=Passive \
     -o examples/01_direct_bond/combined.xml
 ```
 
 Output:
 
 ```
-chiplet_xml_composer 1.0.0
+chiplet_xml_composer 1.1.0
   ...
 wrote examples/01_direct_bond/combined.xml
   detected 0 chiplet(s): []
@@ -150,16 +159,19 @@ wrote examples/01_direct_bond/combined.xml
 This printed summary comes from the tool's own built-in verification step. See
 [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#built-in-post-write-verification) for details.
 
-Zero chiplets is the correct result here, not a bug. `iPassive` gets exactly one new referrer:
-the die's own Dielectric chain, attached directly. A "chiplet," in the sense this tool's
+Zero chiplets is the correct result here, not a bug. `Passive` gets exactly one new referrer:
+the die's own Dielectric chain, attached directly. (The interposer's own `Air` on `Passive` is
+removed first, see [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#pipeline-one-die-at-a-time).) A "chiplet," in the sense this tool's
 detection algorithm uses, only exists once some Dielectric has *two or more* referrers. See
 [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#chiplet-detection-branch-points-not-just-attachments) for
 more.
 
 Open [`examples/01_direct_bond/combined.xml`](../examples/01_direct_bond/combined.xml) to see the
-result. The die's own dielectrics (`Substrate`, `EPI`, `SiO2`, `Passive`) now sit stacked directly
-on top of `iPassive`, bottom to top, in their original order - `Substrate`, the die's own bulk
-silicon, ends up right against the interposer, since nothing flipped it.
+result. The die's own dielectrics (`Substrate`, `EPI`, `SiO2_2`, `Passive_2`) now sit stacked
+directly on top of the interposer's `Passive`, bottom to top, in their original order -
+`Substrate`, the die's own bulk silicon, ends up right against the interposer, since nothing
+flipped it. `SiO2` and `Passive` became `SiO2_2` and `Passive_2` because the interposer already has
+those names.
 
 ![examples/01_direct_bond/combined.xml cross section](../examples/01_direct_bond/combined_preview.png)
 
@@ -249,49 +261,55 @@ carries one. Every value in it is sourced, not guessed - see the `"source"` fiel
 }
 ```
 
+For a thermal (Elmer) model of the combined stackup, each entry also needs
+`"thermal_conductivity"` in W/mK, which becomes `ThermalConductivity=`. It is optional: EM models
+don't use it. The shipped `connection_materials.json` has no thermal values. Add them from a
+source you can name, e.g. the supplier's datasheet for the underfill.
+
 ```bash
 chiplet_xml_composer \
     --chiplet-file examples/02_flip_chip_cupillar/assembly.chiplet \
     --stackup intm4tm2=test_data/interposer_IntM4TM2.xml \
     --stackup sg13g2=test_data/SG13G2_die.xml \
-    --attach die1=iPassive \
+    --attach die1=Passive \
     --interconnect-methods test_data/interconnect_methods.json \
     --connection-materials test_data/connection_materials.json \
-    --boundary-layer die1=2000 \
+    --boundary-layer die1=900 \
     -o examples/02_flip_chip_cupillar/combined.xml
 ```
 
 ```
-chiplet_xml_composer 1.0.0
+chiplet_xml_composer 1.1.0
   ...
 wrote examples/02_flip_chip_cupillar/combined.xml
   detected 0 chiplet(s): []
   no z-overlaps, no missing chiplet boundaries
 ```
 
-Zero chiplets, same reason as example 1: only one die attaches to `iPassive`, so it never becomes
+Zero chiplets, same reason as example 1: only one die attaches to `Passive`, so it never becomes
 a branch point. See example 3 for a case that does detect chiplets.
 
 Open [`examples/02_flip_chip_cupillar/combined.xml`](../examples/02_flip_chip_cupillar/combined.xml)
-to see the result. Bottom to top, right above the interposer's own `iPassive`, you'll find:
+to see the result. Bottom to top, right above the interposer's own `Passive`, you'll find:
 
-- `die1_bondline`, a new 44 um `Underfill` Dielectric, carrying `Boundary="2000"` from
+- `die1_bondline`, a new 44 um `Underfill` Dielectric, carrying `Boundary="900"` from
   `--boundary-layer`. This is the interconnect stack's total height: 28 + 16 um.
 - `die1_CuPillar` and `die1_SnAgCap`, two new `<Layer Type="VIA">` elements, on GDS layers 500
   and 501. Their combined z-range is *wider* than `die1_bondline`'s own 44 um: `die1_CuPillar`'s
-  own `Zmin` reaches 1.9 um below the bondline's own bottom edge, down to `iTopMetal2`'s own top
-  surface, and `die1_SnAgCap`'s own `Zmax` reaches 1.9 um above the bondline's own top edge, up to
-  `TopMetal2`'s own bottom surface (once flipped). A bump's declared height is a pad-to-pad
-  measurement, not a dielectric-surface-to-dielectric-surface one - see
+  own `Zmin` reaches 1.9 um below the bondline's own bottom edge, down to the interposer's
+  `TopMetal2` top surface, and `die1_SnAgCap`'s own `Zmax` reaches 1.9 um above the bondline's own
+  top edge, up to the die's `TopMetal2_2` bottom surface (once flipped). A bump's declared height
+  is a pad-to-pad measurement, not a dielectric-surface-to-dielectric-surface one - see
   [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#connection-stack-pad-to-pad-anchoring) for why, and open the
-  picture below to see the via visibly crossing into `iSiO2` below and `SiO2` above.
+  picture below to see the via visibly crossing into the interposer's `SiO2` below and the die's
+  `SiO2_2` above.
 - In `<Materials>`, one new `Underfill`, `CuPillar`, and `SnAgSolder` entry each - synthesized
   from `connection_materials.json`, with the properties shown above. Neither
   `interposer_IntM4TM2.xml` nor `SG13G2_die.xml` defines any of these three.
-- The die's own dielectrics, reversed: `Passive` now sits right on top of the bondline, since it
-  was the die's own outermost Dielectric next to the stripped `AIR`. `SiO2`, `EPI`, and
-  `Substrate` follow, in that order - `Substrate`, the bulk silicon, now ends up farthest from
-  the interposer, exactly as a real flipped die would sit.
+- The die's own dielectrics, reversed: its `Passive` (renamed `Passive_2`) now sits right on top
+  of the bondline, since it was the die's own outermost Dielectric next to the stripped `AIR`.
+  `SiO2_2`, `EPI`, and `Substrate` follow, in that order - `Substrate`, the bulk silicon, now ends
+  up farthest from the interposer, exactly as a real flipped die would sit.
 
 ![examples/02_flip_chip_cupillar/combined.xml cross section](../examples/02_flip_chip_cupillar/combined_preview.png)
 
@@ -330,36 +348,37 @@ chiplet_xml_composer \
     --chiplet-file examples/03_two_dies/assembly.chiplet \
     --stackup intm4tm2=test_data/interposer_IntM4TM2.xml \
     --stackup sg13g2=test_data/SG13G2_die.xml \
-    --attach die1=iPassive --attach die2=iPassive \
+    --attach die1=Passive --attach die2=Passive \
     --interconnect-methods test_data/interconnect_methods.json \
     --connection-materials test_data/connection_materials.json \
-    --boundary-layer die1=2000 --boundary-layer die2=2100 \
+    --boundary-layer die1=900 --boundary-layer die2=901 \
     -o examples/03_two_dies/combined.xml
 ```
 
 ```
-chiplet_xml_composer 1.0.0
+chiplet_xml_composer 1.1.0
   ...
 wrote examples/03_two_dies/combined.xml
   detected 2 chiplet(s): ['die1_bondline', 'die2_bondline']
   no z-overlaps, no missing chiplet boundaries
 ```
 
-This time `iPassive` gets two referrers, `die1_bondline` and `die2_bondline`, so it becomes a
+This time `Passive` gets two referrers, `die1_bondline` and `die2_bondline`, so it becomes a
 branch point and both dies show up as detected chiplets.
 
 Open [`examples/03_two_dies/combined.xml`](../examples/03_two_dies/combined.xml) to see the
-result. Both dies use the identical `SG13G2_die.xml` source file. Left alone, their Dielectric,
-Material, and Layer names (`Passive`, `Substrate`, `Cont`, and others) would collide. Their
-native GDS layer numbers would collide too.
+result. Both dies use the identical `SG13G2_die.xml` source file, and the interposer uses the
+same names for its own back-end layers. Left alone, their Dielectric, Material, and Layer names
+(`Passive`, `SiO2`, `Metal4`, `Substrate`, and others) would collide. Their native GDS layer
+numbers would collide too.
 
-`chiplet_xml_composer` renames `die2`'s copies instead: `die1` keeps the original names
-(`Passive`, `SiO2`, `EPI`, `Substrate`, ...), and `die2` gets `Passive2`, `SiO22`, `EPI2`,
-`Substrate2`, and so on. It also shifts `die2`'s native GDS layer numbers into a fresh range,
-clear of both the interposer's and `die1`'s - `die1`'s own numbers need no shift at all here,
-since nothing in the interposer collides with them, but `die2`'s do, landing at `+2000` (not
-`+1000`: that would have put `die2`'s own `Metal4` at GDS layer `1050`, which collides with the
-interposer's own `iMetal4`).
+`chiplet_xml_composer` renames each die's colliding copies instead. The interposer keeps its
+names. `die1` gets the first free variant of each name: `Passive_2`, `SiO2_2`, `Metal4_2`, but `EPI`
+and `Substrate`, which the interposer doesn't use, stay as they are. `die2` gets the next one:
+`Passive_3`, `SiO2_3`, `Metal4_3`, `EPI_2`, `Substrate_2`, and so on. The GDS layer numbers are shifted
+the same way: `die1`'s by `+1000` (its `Metal4` lands on `1050`, clear of the interposer's `50`),
+`die2`'s by `+2000`, clear of both. Each die's `Boundary="39"` moves with them, to `1039` and
+`2039`.
 
 Two numbers are the exception: the Cu-pillar bump's own GDS layers, `500` and `501`. Both dies
 correctly share them. They are fixed, PDK-wide registry numbers from `interconnect_methods.json`,
@@ -372,6 +391,21 @@ The `CuPillar`, `SnAgSolder`, and `Underfill` `<Material>` entries are shared th
 the second die rather than creating a renamed duplicate. Open the combined file and confirm it
 for yourself: exactly one `<Material Name="CuPillar">`, not two.
 
+Thermal tables work the same way: both dies use the die stackup's `Si_vs_T_IHP` silicon table,
+and the combined file holds one copy of it, next to the interposer's own `SiliconThermalCond`.
+
+Both stackups have `<Variables>` with the same names (`total_thickness`, `bulk_thickness`,
+`air_thickness`). In the combined file:
+
+- **The dies' variables are resolved:** each die's 200 µm is fixed, its substrate written as
+  180.12 µm.
+- **The interposer's stay working, renamed:** `interposer_total_thickness` (250) and
+  `interposer_bulk_thickness`. Changing `interposer_total_thickness` thickens the interposer
+  substrate and moves both dies up with it.
+- **`air_thickness` is gone:** only the interposer's removed `Air` used it.
+
+See [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#variables-and-thermal-tables) for why.
+
 A stackup cross-section preview can only show one traversal through the Reference chain at a
 time, so a stackup with 2+ detected chiplets gets two kinds of preview instead of one: one cross
 section per chiplet (interposer plus that one die's own branch), and a separate "topology
@@ -382,8 +416,8 @@ see [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#chiplet-detection-branch-points-not-just
 
 ![examples/03_two_dies/combined.xml cross section, die1's branch](../examples/03_two_dies/combined_preview_die1.png)
 
-`die2`'s own branch - notice the renamed Dielectric/Layer/Material names (`Passive2`, `Metal12`,
-...) and the shifted GDS layer numbers, but the *same* `CuPillar`/`SnAgSolder` bump layers on the
+`die2`'s own branch - notice the renamed Dielectric/Layer/Material names (`Passive_3`, `Metal1_2`,
+`Metal4_3`, ...) and the GDS layer numbers shifted by `+2000`, but the *same* `CuPillar`/`SnAgSolder` bump layers on the
 *same* GDS layers 500/501 as `die1`:
 
 ![examples/03_two_dies/combined.xml cross section, die2's branch](../examples/03_two_dies/combined_preview_die2.png)
@@ -392,20 +426,48 @@ Topology overview, both dies side by side on the shared interposer:
 
 ![examples/03_two_dies/combined.xml topology overview](../examples/03_two_dies/combined_preview_topology.png)
 
+### Variable overrides
+
+Both test stackups set their thickness with `<Variables>`: `total_thickness` is the body, Si +
+BEOL. `--variable` changes such a variable for one component before its stackup is used:
+
+```bash
+chiplet_xml_composer ...     --variable die1:total_thickness=150     --variable interposer:total_thickness=300     -o combined.xml
+```
+
+- **A die** is resolved with the new value, so all of its layers follow, including `LBE` and
+  `BACKSIDEGND`. The combined file can't keep a die's variables working (see
+  [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#variables-and-thermal-tables)), so it records the values
+  each die was resolved with in a comment, e.g.
+  `<!-- die1: SG13G2_die.xml resolved with its Variables air_thickness=200, total_thickness=150 (override), bulk_thickness=130.12 -->`.
+- **The interposer** keeps its variables in the combined file, renamed (`interposer_total_thickness`),
+  and the override just sets their value there. You can still change it later in the file or
+  with gds2palace's `variable_overrides`. Overriding one that the combined file no longer uses
+  (e.g. `air_thickness`) prints a warning that it has no effect.
+
+**Thickness check.** A `.chiplet` file can give each component's body thickness in
+`dimensions.thickness` (µm, Si + BEOL; `0` means "no data"). When it is set, the composer compares
+it with the stackup's thickness without AIR, after any override, and prints a warning if they
+differ by more than 1 nm. It never changes a thickness by itself: correct the `.chiplet` file,
+or override the stackup's variable.
+
 ### Python API
 
 ```python
 from chiplet_xml_composer import compose, ComposeError
 
+found = []
 try:
     tree = compose(
         chiplet_path="assembly.chiplet",
         stackup_map={"intm4tm2": "interposer_IntM4TM2.xml", "sg13g2": "SG13G2_die.xml"},
-        attach_map={"die1": "iPassive"},
+        attach_map={"die1": "Passive"},
         interconnect_methods_path="interconnect_methods.json",   # only if any connection: is used
         connection_materials_path="connection_materials.json",   # only if a connection_stack resolves nonzero
-        boundary_layer_map={"die1": 2000},                       # only for dies with a bondline
+        boundary_layer_map={"die1": 900},                        # only for dies with a bondline
         bondline_material="Underfill",                            # optional, this is the default
+        variable_overrides={"die1": {"total_thickness": 150}},   # optional, per component
+        warnings=found,                                           # optional list for warnings
     )
 except ComposeError as e:
     print(f"could not compose: {e}")
@@ -463,6 +525,13 @@ with status 1. Each message names exactly what's missing:
   stackup XML"` - a `--stackup` input file already defines a `<Material Name="X">` of its own.
   Rename one of them - either the entry in `--connection-materials`, or the one in the stackup
   XML.
+- `"Component "X" has orientation: "Y" - only "face_up" (default) and "flip_chip" are valid"` -
+  the `.chiplet` format knows only these two values. Write a die mounted face-down as
+  `flip_chip`, not `face_down`.
+- `"--variable X:...: no interposer or die component "X" in the .chiplet file"` - the component
+  id must be the interposer's or a die's `id` from the `.chiplet` file.
+- `"--variable X:N: the stackup of component "X" (...) has no Variable "N" (it has: ...)"` - use
+  one of the listed names; a stackup without `<Variables>` has none to override.
 - `"Expected exactly one component with type: interposer, found N"` - v1 supports exactly one
   shared interposer per assembly. See
   [`CHIPLET_FORMAT.md`](CHIPLET_FORMAT.md#not-read-out-of-scope-for-v1).
@@ -517,8 +586,8 @@ decision procedure.
    own current topmost surface. If its stackup XML has an outer `AIR` Dielectric (topmost or
    bottommost by resolved z), that's stripped first and the surface under it becomes the pivot;
    if it doesn't, the die's own real outermost Dielectric is the pivot instead - either way
-   works, no `AIR` Dielectric is required. Any other `orientation:` value (or absent) needs
-   nothing extra.
+   works, no `AIR` Dielectric is required. `face_up` (or absent) needs nothing extra. Any other
+   value is a `ComposeError`; a die mounted face-down is `flip_chip`, never `face_down`.
 6. **Every Material a `connection_stack` layer names, and `--bondline-material` (default
    `"Underfill"`), must have an entry in the `--connection-materials` sidecar's `"materials"`
    map - never in a `--stackup` input file.** These materials are not physically part of either
@@ -545,6 +614,7 @@ decision procedure.
 --connection-materials <path>                  (zero or one; required iff some connection_stack resolves nonzero)
 --boundary-layer <component_id>=<gds_layer>    (one per die whose connection_stack has nonzero height)
 --bondline-material <name>                     (zero or one; default "Underfill")
+--variable <component_id>:<name>=<number>      (zero or more; one per overridden Variable)
 -o <path>                                       (exactly one)
 ```
 
@@ -555,8 +625,10 @@ All `KEY=VALUE` flags split on the first `=` only; a component id or technology 
 
 - **Exit code 0** = success. Stdout's last lines are always:
   `  detected N chiplet(s): [...]` then either `  no z-overlaps, no missing chiplet boundaries`
-  or one or more `  WARNING: <text>` lines (non-fatal - the file was still written; treat these
-  as findings to surface, not as a failure).
+  or one or more `  WARNING: <text>` lines from those checks, followed by one `  WARNING: <text>`
+  line per finding of the composition itself (a `dimensions.thickness` that doesn't match its
+  stackup, an override that has no effect). All are non-fatal - the file was still written; treat
+  them as findings to surface, not as a failure.
 - **Exit code 1** = failure. Stdout contains exactly one `ERROR: <message>` line; no output file
   is written. Every message is a complete, self-contained description of the one missing/wrong
   input (see the human section's [error list](#error-messages-you-might-see) for the exact

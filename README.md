@@ -2,7 +2,12 @@
 
 Stitches several per-chiplet [gds2palace](https://github.com/VolkerMuehlhaus/gds2palace_ihp_sg13g2)
 stackup XML files into one combined stackup XML, driven by an IHP
-[`.chiplet`](https://github.com/IHP-GmbH/chiplet-spec) assembly file.
+[`.chiplet`](https://github.com/IHP-GmbH/chiplet-system-spec) assembly file.
+
+The `.chiplet` format and its Python reader (`chiplet-format-io`) are maintained in
+[IHP-GmbH/chiplet-system-spec](https://github.com/IHP-GmbH/chiplet-system-spec), as part of the
+IHP Open Assembly Design Kit ([documentation](https://ihp-open-adk-docs.readthedocs.io/en/latest/formats.html);
+the ADK's assembly checks are in [IHP-GmbH/IHP-Open-ADK](https://github.com/IHP-GmbH/IHP-Open-ADK)).
 
 Scope (v1): Z-stack merge only - it produces one combined stackup XML for gds2palace/openEMS
 simulation, not a merged GDSII layout.
@@ -46,14 +51,14 @@ pip install -e .
 ```
 
 Depends on `gds2palace` and `chiplet-format-io` (the latter installed from a pinned commit of
-[IHP-GmbH/chiplet-spec](https://github.com/IHP-GmbH/chiplet-spec), since it isn't on PyPI yet).
+[IHP-GmbH/chiplet-system-spec](https://github.com/IHP-GmbH/chiplet-system-spec), since it isn't on PyPI yet).
 
 ## Usage
 
 ```bash
 chiplet_xml_composer --chiplet-file assembly.chiplet \
     --stackup tech_a=stackup_a.xml --stackup tech_b=stackup_b.xml \
-    --attach die1=iPassive --attach die2=iPassive \
+    --attach die1=Passive --attach die2=Passive \
     --interconnect-methods interconnect_methods.json \
     --connection-materials connection_materials.json \
     --boundary-layer die1=235 --boundary-layer die2=236 \
@@ -68,6 +73,6 @@ from chiplet_xml_composer import compose
 tree = compose(
     chiplet_path="assembly.chiplet",
     stackup_map={"tech_a": "stackup_a.xml"},
-    attach_map={"die1": "iPassive"},
+    attach_map={"die1": "Passive"},
 )
 ```
