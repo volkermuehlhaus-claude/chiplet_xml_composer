@@ -149,7 +149,7 @@ chiplet_xml_composer \
 Output:
 
 ```
-chiplet_xml_composer 1.1.0
+chiplet_xml_composer 1.2.0
   ...
 wrote examples/01_direct_bond/combined.xml
   detected 0 chiplet(s): []
@@ -279,7 +279,7 @@ chiplet_xml_composer \
 ```
 
 ```
-chiplet_xml_composer 1.1.0
+chiplet_xml_composer 1.2.0
   ...
 wrote examples/02_flip_chip_cupillar/combined.xml
   detected 0 chiplet(s): []
@@ -292,17 +292,16 @@ a branch point. See example 3 for a case that does detect chiplets.
 Open [`examples/02_flip_chip_cupillar/combined.xml`](../examples/02_flip_chip_cupillar/combined.xml)
 to see the result. Bottom to top, right above the interposer's own `Passive`, you'll find:
 
-- `die1_bondline`, a new 44 um `Underfill` Dielectric, carrying `Boundary="900"` from
-  `--boundary-layer`. This is the interconnect stack's total height: 28 + 16 um.
+- `die1_bondline`, a new 42.1003 µm `Underfill` Dielectric, carrying `Boundary="900"` from
+  `--boundary-layer`. The stack is 28 + 16 = 44 µm high, but the `.chiplet` z-mounting rule
+  measures it from the interposer's `TopMetal2` top, 1.8997 µm below the top of its `Passive`.
+  So the die's body starts at `TopMetal2` + 44 µm, and the bondline fills the rest.
 - `die1_CuPillar` and `die1_SnAgCap`, two new `<Layer Type="VIA">` elements, on GDS layers 500
-  and 501. Their combined z-range is *wider* than `die1_bondline`'s own 44 um: `die1_CuPillar`'s
-  own `Zmin` reaches 1.9 um below the bondline's own bottom edge, down to the interposer's
-  `TopMetal2` top surface, and `die1_SnAgCap`'s own `Zmax` reaches 1.9 um above the bondline's own
-  top edge, up to the die's `TopMetal2_2` bottom surface (once flipped). A bump's declared height
-  is a pad-to-pad measurement, not a dielectric-surface-to-dielectric-surface one - see
-  [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#connection-stack-pad-to-pad-anchoring) for why, and open the
-  picture below to see the via visibly crossing into the interposer's `SiO2` below and the die's
-  `SiO2_2` above.
+  and 501. The 28 µm Cu pillar starts on the interposer's `TopMetal2` (crossing its `SiO2` and
+  `Passive`), and the 16 µm SnAg cap continues 1.9 µm on into the die, through `Passive_2` and
+  `SiO2_2`, to the die's `TopMetal2_2` pad (once flipped). See
+  [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#connection-stack-z-mounting) for the rule, and the
+  picture below for the vias crossing both sides' dielectrics.
 - In `<Materials>`, one new `Underfill`, `CuPillar`, and `SnAgSolder` entry each - synthesized
   from `connection_materials.json`, with the properties shown above. Neither
   `interposer_IntM4TM2.xml` nor `SG13G2_die.xml` defines any of these three.
@@ -356,7 +355,7 @@ chiplet_xml_composer \
 ```
 
 ```
-chiplet_xml_composer 1.1.0
+chiplet_xml_composer 1.2.0
   ...
 wrote examples/03_two_dies/combined.xml
   detected 2 chiplet(s): ['die1_bondline', 'die2_bondline']
@@ -451,6 +450,35 @@ it with the stackup's thickness without AIR, after any override, and prints a wa
 differ by more than 1 nm. It never changes a thickness by itself: correct the `.chiplet` file,
 or override the stackup's variable.
 
+### Matching the layout
+
+The composer never reads GDSII, but gds2palace later reads the layout through the combined
+stackup: every shape is matched to a stackup layer by its GDS layer number. So the layout of the
+assembly must use the numbers the combined stackup has.
+
+| Part | GDS layer numbers in the combined stackup |
+|---|---|
+| Interposer | Its own stackup's numbers, unchanged, its `Boundary=` outline included. |
+| Each die | Its own stackup's numbers + an offset: the smallest multiple of 1000 that clears everything before it, in `.chiplet` component order. With the test stackups die1 gets +1000 and die2 +2000, and the die outline 39 becomes 1039 and 2039. |
+| Bump layers | The registry numbers from `interconnect_methods.json`, never offset. IHP's are `CuPillar` 500 and `SnAgCap` 501 (datatype 35). |
+| Bond layer outline | The `--boundary-layer` number you give, never offset. |
+
+When you prepare the layout:
+
+- **Draw the pillar footprints on the bump layers**, on every number the stack uses: for
+  `cupillar_opt1` the same footprint on 500 (pillar) and on 501 (cap). Add their datatype to
+  gds2palace's purpose list (`purposelist`, or `purpose` in setupEM), e.g. 35. (A registry may
+  also give two stack layers the same number: gds2palace gives a number's shapes to every
+  stackup layer that uses it.)
+- **Draw the `--boundary-layer` outline.** If that layer has no shapes, gds2palace silently uses
+  the bounding box of the whole layout for the bond layer, so the underfill covers everything.
+  The die's own outline is usually the right choice, e.g. `--boundary-layer die1=1039`.
+- **Renumber the layout, not the stackup.** A layout assembled with different offsets (e.g. the
+  die native and the interposer at +1000) has to be renumbered first; KLayout or a few lines of
+  gdstk do that per cell.
+- **Look at the combined file to be sure.** Every `Layer=` and `Boundary=` there is the number the
+  layout must use.
+
 ### Python API
 
 ```python
@@ -509,10 +537,14 @@ with status 1. Each message names exactly what's missing:
   `--boundary-layer X=<gds-layer-number>`. This is only required when the resolved
   `connection_stack` has nonzero total height. A direct, zero-height bond needs no bondline and
   no boundary layer.
-- `"Component "X"'s --attach target "Y" is not a Dielectric in the interposer's own stackup"` -
-  a connection stack anchors to the interposer's own topmost metal, which means it needs
-  `--attach`'s own target to be a real `<Dielectric Name="Y">` there - not a typo, and not a
-  Layer name. See [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#connection-stack-pad-to-pad-anchoring).
+- `"Component "X" has --attach target "Y", which is not a Dielectric in the interposer stackup"` -
+  a connection stack is placed relative to the interposer's own topmost metal and `--attach`'s
+  top, so `--attach`'s target must be a real `<Dielectric Name="Y">` there - not a typo, and not a
+  Layer name. See [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#connection-stack-z-mounting).
+- `"Component "X": connection: "Y" is H um high, but the interposer has G um of dielectric between
+  the top of M ... - the die would sit inside the interposer"` - the stack starts on the
+  interposer's top metal `M`, so it must be higher than the interposer's dielectric above that
+  metal. Check the stack heights and the `--attach` Dielectric.
 - `"... has no non-sheet metal Layer for a connection_stack to anchor to"` - a connection stack
   needs a real conductor `<Layer>` (not a `Type="sheet"` one) somewhere in the interposer's own
   stackup, and a real conductor `<Layer>` somewhere in this die's own stackup, to anchor its two
@@ -579,9 +611,10 @@ decision procedure.
      `--connection-materials` sidecar path (see step 6; unlike `--interconnect-methods`, this one
      is *not* needed for a connection: that resolves to zero height). A nonzero total height also
      needs a real, non-`Type="sheet"` conductor `<Layer>` somewhere in the interposer's own
-     stackup, and another in this die's own stackup - the connection stack anchors its two outer
-     ends to the real pad metal on each side, not to a Dielectric edge. See
-     [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#connection-stack-pad-to-pad-anchoring).
+     stackup, and another in this die's own stackup - the stack starts on the interposer's top
+     metal and ends on the die's bottom metal, and the die's body starts at the interposer's top
+     metal + the stack's total height. That total must exceed the interposer's dielectric above its
+     top metal. See [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#connection-stack-z-mounting).
 5. **Check `orientation:`** on each die. `flip_chip` mirrors that die's own z-stack around its
    own current topmost surface. If its stackup XML has an outer `AIR` Dielectric (topmost or
    bottommost by resolved z), that's stripped first and the surface under it becomes the pivot;

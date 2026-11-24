@@ -94,7 +94,7 @@
       <Dielectric Name="Passive" Reference="SiO2" ReferenceEdge="Top" Material="Passive" Thickness="0.4000" Boundary="39" />
       <Dielectric Name="SiO2" Reference="Substrate_Interposer" ReferenceEdge="Top" Material="SiO2" Thickness="12.31" Boundary="39" />
       <Dielectric Name="Substrate_Interposer" Material="HighResSubstrate" Thickness="=interposer_bulk_thickness" Boundary="39" />
-      <Dielectric Name="die1_bondline" Material="Underfill" Reference="Passive" ReferenceEdge="Top" Thickness="44.0000" Boundary="900" />
+      <Dielectric Name="die1_bondline" Material="Underfill" Reference="Passive" ReferenceEdge="Top" Thickness="42.1003" Boundary="900" />
       <Dielectric Name="Passive_2" Material="Passive_2" Reference="die1_bondline" ReferenceEdge="Top" Thickness="0.4000" Boundary="1039" />
       <Dielectric Name="SiO2_2" Material="SiO2_2" Reference="Passive_2" ReferenceEdge="Top" Thickness="15.7303" Boundary="1039" />
       <Dielectric Name="EPI" Material="EPI" Reference="SiO2_2" ReferenceEdge="Top" Thickness="3.7500" Boundary="1039" />
@@ -113,8 +113,8 @@
       <Layer Name="Metal4" Type="conductor" Reference="SiO2" ReferenceEdge="Bottom" Material="Metal4" Layer="50" Zmin="0.6400" Zmax="1.1300" />
       <Layer Name="LBE" Type="via" Reference="BACKSIDEGND" ReferenceEdge="Bottom" Material="AIR" Layer="157" Zmin="0.0000" Zmax="=interposer_bulk_thickness" />
       <Layer Name="BACKSIDEGND" Type="sheet" Reference="Substrate_Interposer" ReferenceEdge="Bottom" Material="PEC" Layer="251" Zmin="0.0000" Zmax="0" />
-      <Layer Name="die1_CuPillar" Type="VIA" Material="CuPillar" Layer="500" Reference="die1_bondline" ReferenceEdge="Bottom" Zmin="-1.8997" Zmax="28.0000" />
-      <Layer Name="die1_SnAgCap" Type="VIA" Material="SnAgSolder" Layer="501" Reference="die1_bondline" ReferenceEdge="Bottom" Zmin="28.0000" Zmax="45.9000" />
+      <Layer Name="die1_CuPillar" Type="VIA" Material="CuPillar" Layer="500" Reference="die1_bondline" ReferenceEdge="Bottom" Zmin="-1.8997" Zmax="26.1003" />
+      <Layer Name="die1_SnAgCap" Type="VIA" Material="SnAgSolder" Layer="501" Reference="die1_bondline" ReferenceEdge="Bottom" Zmin="26.1003" Zmax="44.0003" />
       <Layer Name="TopMetal2_2" Type="CONDUCTOR" Material="TopMetal2_2" Layer="1134" Reference="SiO2_2" ReferenceEdge="Bottom" Zmin="1.5000" Zmax="4.5000" />
       <Layer Name="TopVia2_2" Type="VIA" Material="TopVia2_2" Layer="1133" Reference="TopMetal2_2" ReferenceEdge="Top" Zmin="0.0000" Zmax="2.8000" />
       <Layer Name="TopMetal1_2" Type="CONDUCTOR" Material="TopMetal1_2" Layer="1126" Reference="TopVia2_2" ReferenceEdge="Top" Zmin="0.0000" Zmax="2.0000" />

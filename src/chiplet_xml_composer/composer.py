@@ -60,7 +60,7 @@
 #   from chiplet_xml_composer import compose
 #   compose(chiplet_path=..., stackup_map=..., ...)
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 import argparse
 import ast
@@ -1002,6 +1002,34 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
                                      added_connection_material_names, bondline_material,
                                      f'component "{component_id}"\'s bridging Dielectric')
 
+        # Z-mounting per the .chiplet coordinate-frame contract, section 3.1: the connection
+        # stack starts at the interposer's mount plane, the top of its topmost metal (IHP's
+        # attachment_surface_z, the TopMetal2 top under the passivation opening), and the die's
+        # seating plane - the bottom face of its body - is that plane + the stack's total height.
+        # The interposer's own oxide/passivation above that metal lies inside the stack's height,
+        # so the bondline Dielectric, which starts on --attach's top surface, is that much
+        # thinner than the stack. The vias start at the metal; the last one reaches on into the
+        # die, through its own passivation/oxide, to its bottommost metal (its pad). See
+        # HOW_IT_WORKS.md#connection-stack-z-mounting.
+        attach_dielectric = base_dielectrics.get_by_name(attach_point)
+        if attach_dielectric is None:
+          raise ComposeError(
+              f'Component "{component_id}" has --attach target "{attach_point}", which is not '
+              f'a Dielectric in the interposer stackup')
+        interposer_top_metal = _topmost_metal(base_metals, 'the interposer')
+        chip_bottom_metal = _bottommost_metal(
+            chip_metals, f'the stackup of component "{component_id}"')
+        gap_below_attach = attach_dielectric.zmax - interposer_top_metal.zmax
+        metal_offset_in_die = chip_bottom_metal.zmin - ordered_dielectrics[0].zmin
+        bondline_thickness = total_height - gap_below_attach
+        if bondline_thickness <= 1e-6:
+          raise ComposeError(
+              f'Component "{component_id}": connection: "{connection_id}" is {total_height:g} um '
+              f'high, but the interposer has {gap_below_attach:.4f} um of dielectric between the '
+              f'top of {interposer_top_metal.name} (where the stack starts) and the top of '
+              f'"{attach_point}" (where the die would rest) - the die would sit inside the '
+              f'interposer')
+
         bondline_name = _unique_name(renamer.dielectric_names, f"{component_id}_bondline")
         renamer.dielectric_names.add(bondline_name)
         bondline_el = ET.SubElement(base_dielectrics_el, "Dielectric")
@@ -1009,46 +1037,17 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
         bondline_el.set("Material", bondline_material)
         bondline_el.set("Reference", attach_point)
         bondline_el.set("ReferenceEdge", "Top")
-        bondline_el.set("Thickness", f"{total_height:.4f}")
+        bondline_el.set("Thickness", f"{bondline_thickness:.4f}")
         bondline_el.set("Boundary", str(int(boundary_layer)))
 
-        # A connection_stack's declared total height is a pad-to-pad bump/pillar height, not a
-        # dielectric-surface-to-dielectric-surface gap - the via/pillar metal itself must reach
-        # the real conductor surface on each side, not just span the bondline's own nominal
-        # extent. Any passivation (or other dielectric) sitting between --attach's own Dielectric
-        # edge and the real pad metal is bridged by extending the via chain's own two outer ends
-        # past the bondline's own Bottom/Top - overlapping into the neighboring Dielectric on
-        # each side, same as any other via/metal embedded inside its surrounding Dielectric (see
-        # find_z_overlaps(), which only flags two overlapping DIELECTRICS, never a Layer
-        # overlapping one - a via reaching past its own bondline into the next Dielectric over is
-        # exactly as normal as iTopMetal2 sitting embedded inside iSiO2). The bondline Dielectric
-        # itself, and the die's own first Dielectric right above it, are deliberately left
-        # untouched - shifting either of *those* would create exactly the Dielectric-vs-Dielectric
-        # overlap find_z_overlaps() exists to catch. See
-        # HOW_IT_WORKS.md#connection-stack-pad-to-pad-anchoring.
-        attach_dielectric = base_dielectrics.get_by_name(attach_point)
-        if attach_dielectric is None:
-          raise ComposeError(
-              f'Component "{component_id}"\'s --attach target "{attach_point}" is not a '
-              f'Dielectric in the interposer\'s own stackup')
-        interposer_top_metal = _topmost_metal(base_metals, 'the interposer')
-        chip_bottom_metal = _bottommost_metal(
-            chip_metals, f'component "{component_id}"\'s own stackup')
-        gap_below_attach = attach_dielectric.zmax - interposer_top_metal.zmax
-        metal_offset_in_die = chip_bottom_metal.zmin - ordered_dielectrics[0].zmin
-
-        # each via/pillar layer is embedded WITHIN the bondline dielectric's own z-range, same
-        # convention as e.g. interposer_SG13G2.xml's own TopMetal2, embedded in SiO2 via
-        # Reference="SiO2" ReferenceEdge="Bottom" - except the very first layer's own Zmin and
-        # the very last layer's own Zmax are pulled past the bondline's own Bottom/Top by
-        # gap_below_attach/metal_offset_in_die respectively, to reach the real pad metal on each
-        # side. Referenced off the bondline's own Bottom edge rather than off attach_point
-        # directly - numerically identical (the bondline's own zmin IS attach_point's zmax), but
-        # this keeps the via's Reference chain inside the chiplet's own subtree, so
-        # detect_chiplet_groups() scopes it to this chiplet instead of unconditionally treating
-        # it as interposer (see that function's docstring: a Layer referencing an interposer
-        # Dielectric directly is always interposer-scoped, regardless of where it physically sits)
-        via_offset_zmin = 0.0
+        # each via/pillar layer is Referenced off the bondline's own Bottom edge (= the top of
+        # --attach), so the stack starts gap_below_attach below it, at the interposer's metal.
+        # Going through the bondline rather than attach_point keeps the via's Reference chain
+        # inside the chiplet's own subtree, so detect_chiplet_groups() scopes it to this chiplet
+        # (a Layer referencing an interposer Dielectric directly is always interposer-scoped).
+        # A via/metal Layer overlapping a neighbouring Dielectric is normal in this format;
+        # find_z_overlaps() only flags two overlapping Dielectrics.
+        via_offset_zmin = -gap_below_attach
         for i, layer in enumerate(stack_layers):
           _ensure_connection_material(
               base_materials_el, renamer, connection_materials, added_connection_material_names,
@@ -1056,7 +1055,7 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
               f'connection_stack layer "{layer["name"]}" (method "{connection_id}")')
           via_name = _unique_name(renamer.layer_names, f"{component_id}_{layer['name']}")
           renamer.layer_names.add(via_name)
-          via_zmin = via_offset_zmin - (gap_below_attach if i == 0 else 0.0)
+          via_zmin = via_offset_zmin
           via_offset_zmin += layer["height"]
           via_zmax = via_offset_zmin + (metal_offset_in_die if i == len(stack_layers) - 1 else 0.0)
           via_el = ET.SubElement(base_layers_el, "Layer")

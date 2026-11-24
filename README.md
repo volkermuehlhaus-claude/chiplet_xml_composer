@@ -14,8 +14,8 @@ simulation, not a merged GDSII layout.
 
 ## Documentation
 
-- [`doc/USAGE.md`](doc/USAGE.md) - command-line reference, worked examples, Python API, error
-  messages.
+- [`doc/USAGE.md`](doc/USAGE.md) - command-line reference, worked examples, variable overrides,
+  matching the layout's GDS layer numbers, Python API, error messages.
 - [`doc/CHIPLET_FORMAT.md`](doc/CHIPLET_FORMAT.md) - exactly which `.chiplet`/
   `interconnect_methods.json`/`connection_materials.json` fields are read, which are ignored, and
   what's missing from all three that has to come from the command line instead.
@@ -52,6 +52,14 @@ pip install -e .
 
 Depends on `gds2palace` and `chiplet-format-io` (the latter installed from a pinned commit of
 [IHP-GmbH/chiplet-system-spec](https://github.com/IHP-GmbH/chiplet-system-spec), since it isn't on PyPI yet).
+
+## Tests
+
+```bash
+python -m pytest
+```
+
+Needs `gds2palace` and `chiplet-format-io` (as installed above); about a second.
 
 ## Usage
 

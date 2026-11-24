@@ -81,7 +81,7 @@ of the combined stackup stops with a message if a material has none.
 |---|---|
 | `methods.<connection_id>.connection_stack.layers[].name` | Looked up in `layer_registry` for a GDS layer number. |
 | `methods.<connection_id>.connection_stack.layers[].material` | The via Layer's `Material=`. This is only a name. The matching electrical properties are looked up in `connection_materials.json`, never in a `--stackup` XML - see below. |
-| `methods.<connection_id>.connection_stack.layers[].height` | Summed into the bridging Dielectric's own `Thickness=`. Also sets each layer's own z-extent within it. |
+| `methods.<connection_id>.connection_stack.layers[].height` | Each via layer's own z-extent, stacked from the interposer's top metal. The sum places the die's body per the `.chiplet` z-mounting rule (`coord_frame_contract.md` section 3.1); the bridging Dielectric is that sum minus the interposer's dielectric above its top metal. |
 | `layer_registry.<name>.gds_layer` | The via Layer's `Layer=` (GDS layer number). |
 
 | `connection_materials.json` field | Used for |
@@ -193,7 +193,7 @@ shape shown in [`USAGE.md`](USAGE.md#2-flip-chip-die-with-a-cu-pillar-connection
 |---|---|---|
 | `methods.<id>.connection_stack.layers[].name` | yes | Looked up in `layer_registry`; `ComposeError` if missing there. |
 | `methods.<id>.connection_stack.layers[].material` | yes | A name only. Must resolve in `--connection-materials`, or `ComposeError`. Must **not** also exist as a `<Material>` in any `--stackup` input - that's a collision, `ComposeError`, not a fallback source. |
-| `methods.<id>.connection_stack.layers[].height` | yes | Summed for the bondline `Thickness=`; individual layer z-extents. |
+| `methods.<id>.connection_stack.layers[].height` | yes | Each via layer's own z-extent, stacked from the interposer's top metal; the sum places the die's body (`coord_frame_contract.md` 3.1), and the bondline `Thickness=` is that sum minus the interposer's dielectric above its top metal. |
 | `methods.<id>.connection_stack.layers[].diameter` | no | Read into the internal per-layer dict but not used - v1 draws a full-width via Layer with a `Boundary=`-restricted footprint, not a real per-bump-diameter shape. |
 | `layer_registry.<name>.gds_layer` | yes | Becomes the via Layer's `Layer=`. |
 | `layer_registry.<name>.gds_datatype` | no | Read into the internal dict but never written anywhere - the gds2palace stackup XML `<Layer>` element has no datatype field at all. |
