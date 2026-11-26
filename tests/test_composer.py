@@ -263,6 +263,62 @@ def test_thermal_tables_and_die_expressions(tmp_path):
     assert "k_m" not in {v.get("Name") for v in root.iter("Variable")}
 
 
+def test_priority_is_kept(tmp_path):
+    # die: SiO2 and Metal1 with a Priority (where volumes overlap, the higher one wins)
+    die = ET.parse(DIE)
+    droot = die.getroot()
+    next(d for d in droot.iter("Dielectric") if d.get("Name") == "SiO2").set("Priority", "2")
+    next(l for l in droot.iter("Layer") if l.get("Name") == "Metal1").set("Priority", "-1")
+    die_path = os.path.join(str(tmp_path), "die.xml")
+    die.write(die_path)
+
+    root = compose_two_dies(stackup_map={"intm4tm2": INTERPOSER, "sg13g2": die_path}).getroot()
+    assert sum(1 for d in root.iter("Dielectric") if d.get("Priority") == "2") == 2    # one per die
+    assert sum(1 for l in root.iter("Layer") if l.get("Priority") == "-1") == 2
+    assert root.get("schemaVersion") == "3.2"
+
+
+def test_datatype_is_kept(tmp_path):
+    # die: Metal1 read from GDS datatype 20 (the chiplet's layer offset goes on the layer number only)
+    die = ET.parse(DIE)
+    metal1 = next(l for l in die.getroot().iter("Layer") if l.get("Name") == "Metal1")
+    number = int(metal1.get("Layer"))
+    metal1.set("Datatype", "20")
+    die_path = os.path.join(str(tmp_path), "die.xml")
+    die.write(die_path)
+
+    root = compose_two_dies(stackup_map={"intm4tm2": INTERPOSER, "sg13g2": die_path}).getroot()
+    with_datatype = [l for l in root.iter("Layer") if l.get("Datatype") == "20"]
+    assert len(with_datatype) == 2                                         # one per die
+    assert sorted(int(l.get("Layer")) % 1000 for l in with_datatype) == [number, number]
+    assert root.get("schemaVersion") == "3.2"
+
+
+def test_direction_dependent_thermal_values(tmp_path):
+    # die: Activ with a lateral value (expression) and a vertical table (ThermalConductivity.xy / .z)
+    die = ET.parse(DIE)
+    droot = die.getroot()
+    ET.SubElement(droot.find("Variables"), "Variable", Name="k_lat", Value="140")
+    activ = next(m for m in droot.iter("Material") if m.get("Name") == "Activ")
+    table_name = activ.attrib.pop("ThermalConductivityTable")
+    activ.set("ThermalConductivity.xy", "=k_lat")
+    activ.set("ThermalConductivityTable.z", table_name)
+    die_path = os.path.join(str(tmp_path), "die.xml")
+    die.write(die_path)
+    # interposer: a different table under the die table's name, so the die's table is renamed
+    interposer = ET.parse(INTERPOSER)
+    table = ET.SubElement(interposer.getroot().find("Tables"), "Table", Name=table_name)
+    ET.SubElement(table, "Point", Temperature="300", Value="148")
+    interposer_path = os.path.join(str(tmp_path), "interposer.xml")
+    interposer.write(interposer_path)
+
+    root = compose_two_dies(stackup_map={"intm4tm2": interposer_path, "sg13g2": die_path}).getroot()
+    materials = {m.get("Name"): m for m in root.iter("Material")}
+    assert materials["Activ"].get("ThermalConductivityTable.z") == f"{table_name}_2"
+    assert float(materials["Activ"].get("ThermalConductivity.xy")) == 140.0
+    assert root.get("schemaVersion") == "3.2"
+
+
 def test_connection_material_thermal_conductivity(tmp_path):
     with open(MATERIALS, encoding="utf-8") as f:
         materials = json.load(f)

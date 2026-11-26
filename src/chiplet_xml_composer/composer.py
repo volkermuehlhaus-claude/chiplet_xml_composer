@@ -799,6 +799,29 @@ def _ensure_connection_material (base_materials_el, renamer, connection_material
   added_material_names.add(material_name)
 
 
+# a Material's thermal table references: the plain one and one per direction (gds2palace stackup reader 1.11.0)
+_TABLE_ATTRIBUTES = ["ThermalConductivityTable"] + [f"ThermalConductivityTable.{suffix}"
+                                                    for suffix in stackup_reader.DIRECTION_SUFFIXES]
+
+# schemaVersion of a stackup with direction-dependent material values (ThermalConductivity.xy etc.) or Priority
+_DIRECTIONAL_SCHEMA_VERSION = "3.2"
+
+
+def _raise_schema_for_directional_materials (base_root):
+  """A copied die Material with direction-dependent values (an attribute like ThermalConductivity.z), or a
+     Dielectric or Layer with a Priority, needs schemaVersion "3.2", so that an older reader warns instead of
+     ignoring them without a word. Only raises the version, never lowers it."""
+  directional = any("." in attr for el in base_root.iter("Material") for attr in el.attrib)
+  priority = any(el.get("Priority") for tag in ("Dielectric", "Layer") for el in base_root.iter(tag))
+  datatype = (any(el.get("Datatype") for tag in ("Layer", "Operand") for el in base_root.iter(tag))
+              or any(el.get("BoundaryDatatype") for el in base_root.iter("Dielectric")))
+  if not (directional or priority or datatype):
+    return
+  current = stackup_reader._parse_schema_version(base_root.get("schemaVersion"))
+  if current is None or current < stackup_reader._parse_schema_version(_DIRECTIONAL_SCHEMA_VERSION):
+    base_root.set("schemaVersion", _DIRECTIONAL_SCHEMA_VERSION)
+
+
 def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
              connection_materials_path=None, attach_map=None, boundary_layer_map=None,
              bondline_material="Underfill", variable_overrides=None, warnings=None):
@@ -1102,9 +1125,11 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
         new_el = copy.deepcopy(mat_el)
         _resolve_expressions(new_el, chip_variables)
         new_el.set("Name", new_name)
-        table_name = new_el.get("ThermalConductivityTable")
-        if table_name in table_renames:
-          new_el.set("ThermalConductivityTable", table_renames[table_name])
+        # the plain table and the per-direction ones (ThermalConductivityTable.xy / .z)
+        for table_attr in _TABLE_ATTRIBUTES:
+          table_name = new_el.get(table_attr)
+          if table_name in table_renames:
+            new_el.set(table_attr, table_renames[table_name])
         base_materials_el.append(new_el)
 
     # ---- Dielectrics: Reference-chained onto the bondline (or attach point directly, for
@@ -1123,7 +1148,13 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
       el.set("ReferenceEdge", current_edge)
       el.set("Thickness", f"{dielectric.thickness:.4f}")
       if dielectric.gdsboundary is not None:
-        el.set("Boundary", str(int(dielectric.gdsboundary) + gds_offset))
+        # a boundary with a BoundaryDatatype is a layer id that holds number and datatype
+        number, datatype = stackup_reader.split_layer_id(dielectric.gdsboundary)
+        el.set("Boundary", str(number + gds_offset))
+        if datatype is not None:
+          el.set("BoundaryDatatype", str(datatype))
+      if getattr(dielectric, "priority", 0):
+        el.set("Priority", str(dielectric.priority))
       current_reference = new_name
       current_edge = "Top"
 
@@ -1140,7 +1171,11 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
       el.set("Name", new_name)
       el.set("Type", metal.type)
       el.set("Material", renamer.material_lookup(metal.material))
-      el.set("Layer", str(int(metal.layernum) + gds_offset))
+      # a layer with a Datatype: the offset goes on its GDS layer number, the Datatype is kept
+      number, datatype = stackup_reader.split_layer_id(metal.layernum)
+      el.set("Layer", str(number + gds_offset))
+      if datatype is not None:
+        el.set("Datatype", str(datatype))
       if metal_reference is None:
         # first metal in this chiplet (by zmin) - anchor it to whichever Dielectric its zmin
         # actually falls inside, so it starts at the right height rather than always at the
@@ -1157,6 +1192,8 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
         base = metal_reference_base  # previous metal's own zmax, since its ReferenceEdge is Top
       el.set("Zmin", f"{metal.zmin - base:.4f}")
       el.set("Zmax", f"{metal.zmax - base:.4f}")
+      if getattr(metal, "priority", 0):
+        el.set("Priority", str(metal.priority))
       metal_reference = new_name
       metal_reference_base = metal.zmax
 
@@ -1176,6 +1213,8 @@ def compose (chiplet_path, stackup_map, interconnect_methods_path=None,
         for operand_el in new_el.findall("Operand"):
           operand_el.set("Layer", str(int(operand_el.get("Layer")) + gds_offset))
         base_derived_el.append(new_el)
+
+  _raise_schema_for_directional_materials(base_root)
 
   if report_warnings:
     import warnings as _warnings   # the parameter shadows the module name here
