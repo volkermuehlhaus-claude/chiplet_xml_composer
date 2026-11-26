@@ -440,9 +440,9 @@ def _clean_interposer_variables (base_root, component_id):
      The dies' own Variables are never copied (see above), so every Variable left is the
      interposer's own: each one is renamed <component_id>_<name> (e.g. interposer_total_thickness),
      so the combined file says which part it sets, and every "="-expression is updated to match.
-     A Variable that no expression uses any more, directly or through another Variable (e.g.
-     air_thickness once the interposer's outer AIR is removed), is dropped; <Variables> itself
-     is dropped when none is left.
+     A Variable that no expression uses any more, directly or through another Variable's Value,
+     Min or Max (e.g. air_thickness once the interposer's outer AIR is removed), is dropped;
+     <Variables> itself is dropped when none is left.
   Args:
       base_root (xml.etree.ElementTree.Element): the combined file's root - mutated
       component_id (string): the interposer component's id, used as the prefix
@@ -462,15 +462,19 @@ def _clean_interposer_variables (base_root, component_id):
     for raw in el.attrib.values():
       if isinstance(raw, str) and raw.startswith("="):
         used.update(name for _, _, name in _expression_names(raw))
+  # a kept Variable's limits can be expressions too (Min="=die_thickness"): what they name is kept as well
   pending = list(used)
   while pending:
     value = var_els.get(pending.pop(), None)
-    raw = value.get("Value") if value is not None else None
-    if isinstance(raw, str) and raw.startswith("="):
-      for _, _, name in _expression_names(raw):
-        if name not in used:
-          used.add(name)
-          pending.append(name)
+    if value is None:
+      continue
+    for key in ("Value", "Min", "Max"):
+      raw = value.get(key)
+      if isinstance(raw, str) and raw.startswith("="):
+        for _, _, name in _expression_names(raw):
+          if name not in used:
+            used.add(name)
+            pending.append(name)
 
   for name, el in var_els.items():
     if name not in used:
@@ -790,8 +794,12 @@ def _ensure_connection_material (base_materials_el, renamer, connection_material
         f'"type": "{material_type}" in --connection-materials (must be "Conductor" or '
         f'"Dielectric")')
   # optional: only thermal (Elmer) models need it, and they stop with a message if it's missing
-  if "thermal_conductivity" in spec:
-    el.set("ThermalConductivity", str(spec["thermal_conductivity"]))
+  # per direction (lateral / vertical) for a layer that averages two materials, e.g. pillars in underfill
+  for key, attribute in (("thermal_conductivity", "ThermalConductivity"),
+                         ("thermal_conductivity_xy", "ThermalConductivity.xy"),
+                         ("thermal_conductivity_z", "ThermalConductivity.z")):
+    if key in spec:
+      el.set(attribute, str(spec[key]))
   if "color" in spec:
     el.set("Color", spec["color"])
 
@@ -815,7 +823,9 @@ def _raise_schema_for_directional_materials (base_root):
   priority = any(el.get("Priority") for tag in ("Dielectric", "Layer") for el in base_root.iter(tag))
   datatype = (any(el.get("Datatype") for tag in ("Layer", "Operand") for el in base_root.iter(tag))
               or any(el.get("BoundaryDatatype") for el in base_root.iter("Dielectric")))
-  if not (directional or priority or datatype):
+  limits = any(el.get(attr) for el in base_root.iter("Variable")
+               for attr in ("Min", "Max", "Step", "List", "Description"))
+  if not (directional or priority or datatype or limits):
     return
   current = stackup_reader._parse_schema_version(base_root.get("schemaVersion"))
   if current is None or current < stackup_reader._parse_schema_version(_DIRECTIONAL_SCHEMA_VERSION):

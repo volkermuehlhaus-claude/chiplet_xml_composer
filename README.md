@@ -50,7 +50,7 @@ See [`doc/USAGE.md`](doc/USAGE.md) for the full walkthrough of each one.
 pip install -e .
 ```
 
-Depends on `gds2palace` and `chiplet-format-io` (the latter installed from a pinned commit of
+Depends on `gds2palace` (0.13.0 or newer) and `chiplet-format-io` (the latter installed from a pinned commit of
 [IHP-GmbH/chiplet-system-spec](https://github.com/IHP-GmbH/chiplet-system-spec), since it isn't on PyPI yet).
 
 ## Tests

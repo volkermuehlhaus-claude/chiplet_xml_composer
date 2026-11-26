@@ -292,7 +292,7 @@ variable therefore moves the dies with it, as in its own file. In the combined f
   several parts, and a plain `total_thickness` would not say which one it sets. Only the name
   tokens are rewritten; the rest of each expression is kept as written.
 - **Unused ones dropped:** a variable that no expression uses any more, directly or through
-  another variable, is removed. The interposer's `air_thickness` is the usual case: only its
+  another variable (its `Value`, or its limits `Min` and `Max`), is removed. The interposer's `air_thickness` is the usual case: only its
   outer `AIR` used it, and that is removed (see
   [Pipeline, one die at a time](#pipeline-one-die-at-a-time)). With none left, `<Variables>` is
   removed too.
@@ -317,6 +317,22 @@ into the combined file's `<Tables>`:
   rule as for the other names, and the die's materials point at the new name.
 
 The interposer's own tables stay as they are.
+
+### Stackup format 3.2
+
+The attributes of stackup format 3.2 are kept (needs gds2palace 0.13.0 or newer):
+
+- **Thermal conductivity per direction** (`ThermalConductivity.xy`, `.z` and the tables per
+  direction) is copied with a die's materials, like the plain values.
+- **`Datatype` and `BoundaryDatatype`** are copied with the layer or dielectric.
+- **`Priority`** is copied as written. It counts across the whole combined file: a die
+  dielectric with `Priority="-1"` is also below the interposer's dielectrics where they overlap.
+  The bridging dielectrics that the composer adds have no Priority (0).
+- **Limits of variables** (`Min`, `Max`, `List`, `Description`) stay on the interposer's
+  variables. A die's limits are checked when its variables are resolved, also for `--variable`
+  values.
+
+When the combined file uses one of these, it gets `schemaVersion="3.2"`.
 
 ### Why a fresh chain, not a rewritten one
 

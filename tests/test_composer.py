@@ -161,6 +161,27 @@ def test_clean_interposer_variables_keeps_used_chain_and_renames():
     assert float(stackup_reader.resolve_attr(root.find(".//Dielectric"), "Thickness", None, variables)) == 8.0
 
 
+def test_clean_interposer_variables_keeps_what_a_limit_names():
+    # mold_thickness has Min="=die_thickness": die_thickness is used nowhere else, but must stay (and be renamed),
+    # or the combined file stops with an undefined variable
+    root = ET.fromstring(
+        '<Stackup><Variables><Variable Name="die_thickness" Value="200"/>'
+        '<Variable Name="mold_thickness" Value="400" Min="=die_thickness" Max="=2 * limit"/>'
+        '<Variable Name="limit" Value="500"/><Variable Name="unused" Value="1"/></Variables>'
+        '<ELayers><Dielectrics><Dielectric Name="Mold" Thickness="=mold_thickness"/></Dielectrics></ELayers>'
+        '</Stackup>')
+    renames = _clean_interposer_variables(root, "ip")
+    assert renames == {"die_thickness": "ip_die_thickness", "mold_thickness": "ip_mold_thickness",
+                       "limit": "ip_limit"}
+    mold = next(v for v in root.iter("Variable") if v.get("Name") == "ip_mold_thickness")
+    assert (mold.get("Min"), mold.get("Max")) == ("=ip_die_thickness", "=2 * ip_limit")
+    variables = stackup_reader.variables_list()
+    for el in root.iter("Variable"):
+        variables.append(stackup_reader.variable(el))
+    variables.resolve_all()
+    variables.check_allowed_values()
+
+
 def test_clean_interposer_variables_drops_empty_block():
     root = ET.fromstring('<Stackup><Variables><Variable Name="air_thickness" Value="300"/></Variables>'
                          '<ELayers/></Stackup>')
@@ -339,3 +360,22 @@ def test_renamed_names_get_underscore_suffix():
     assert _unique_name({"a", "a_2"}, "a") == "a_3"
     names = {d.get("Name") for d in compose_two_dies().getroot().iter("Dielectric")}
     assert {"Passive", "Passive_2", "Passive_3", "SiO2_2", "SiO2_3", "EPI", "EPI_2"} <= names
+
+
+def test_connection_material_thermal_conductivity_per_direction(tmp_path):
+    # pillars in underfill, as one averaged layer: a lateral and a vertical value in the sidecar
+    with open(MATERIALS, encoding="utf-8") as f:
+        materials = json.load(f)
+    materials["materials"]["Underfill"].update(thermal_conductivity_xy=0.6, thermal_conductivity_z=4.0)
+    path = os.path.join(str(tmp_path), "materials.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(materials, f)
+    tree = compose_two_dies(connection_materials_path=path)
+    underfill = next(m for m in tree.getroot().iter("Material") if m.get("Name") == "Underfill")
+    assert (underfill.get("ThermalConductivity.xy"), underfill.get("ThermalConductivity.z")) == ("0.6", "4.0")
+    assert underfill.get("ThermalConductivity") is None
+    assert tree.getroot().get("schemaVersion") == "3.2"
+    out = os.path.join(str(tmp_path), "combined.xml")
+    tree.write(out)
+    read_materials, _, _ = stackup_reader.read_substrate(out)
+    assert [spec.value for spec in read_materials.get_by_name("Underfill").thermal_xyz] == [0.6, 0.6, 4.0]

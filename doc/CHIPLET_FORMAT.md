@@ -64,7 +64,10 @@ each entry names a `"type"` (`"Conductor"` or `"Dielectric"`), the matching prop
 (`"conductivity"` or `"permittivity"`/`"dielectric_loss_tangent"`), and a `"source"` string
 recording where the value came from. For thermal (Elmer) models, an entry also needs
 `"thermal_conductivity"` (W/mK). It is optional because EM models don't use it; a thermal model
-of the combined stackup stops with a message if a material has none.
+of the combined stackup stops with a message if a material has none. A material that conducts
+heat differently along the chip and through it, e.g. a bump layer filled with underfill, can
+give `"thermal_conductivity_xy"` (lateral) and `"thermal_conductivity_z"` (vertical) instead of,
+or in addition to, the one value.
 
 ### Read
 
@@ -91,6 +94,7 @@ of the combined stackup stops with a message if a material has none.
 | `materials.<name>.permittivity` | Required when `type` is `"Dielectric"`. Becomes `<Material Permittivity="...">`. |
 | `materials.<name>.dielectric_loss_tangent` | Optional, only meaningful when `type` is `"Dielectric"`. Becomes `<Material DielectricLossTangent="...">` when present. |
 | `materials.<name>.thermal_conductivity` | Optional, W/mK, for either `type`. Becomes `<Material ThermalConductivity="...">` when present. Needed for thermal (Elmer) models. |
+| `materials.<name>.thermal_conductivity_xy`, `thermal_conductivity_z` | Optional, W/mK: the lateral and the vertical value. Become `ThermalConductivity.xy` and `ThermalConductivity.z` (stackup format 3.2). A direction without its own value uses `thermal_conductivity`. |
 | `materials.<name>.color` | Optional. Becomes `<Material Color="...">` when present. |
 | `materials.<name>.source` | Not read by the tool. It exists so a human can see where the value came from. Always fill it in anyway. |
 
@@ -213,6 +217,7 @@ declares a non-empty `connection`.
 | `materials.<name>.permittivity` | yes, if `type == "Dielectric"` | `ComposeError` if `type` is `"Dielectric"` and this is absent. |
 | `materials.<name>.dielectric_loss_tangent` | yes, if present | Optional even for a Dielectric. |
 | `materials.<name>.thermal_conductivity` | yes, if present | Optional, W/mK, any `type`. Written as `ThermalConductivity=`. Without it, an EM model works and a thermal model of the output does not. |
+| `materials.<name>.thermal_conductivity_xy`, `thermal_conductivity_z` | yes, if present | Optional, W/mK, any `type`. Written as `ThermalConductivity.xy=` and `ThermalConductivity.z=`; the output then has `schemaVersion="3.2"`. |
 | `materials.<name>.color` | yes, if present | Optional. |
 | `materials.<name>.source` | no | Documentation only; not read by `compose()`. Fill it in anyway. |
 | `description` (top-level) | no | Documentation only. |

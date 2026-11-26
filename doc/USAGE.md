@@ -40,7 +40,7 @@ pip install -e .
 ```
 
 This installs the `chiplet_xml_composer` console script. It also installs two dependencies:
-`gds2palace` and `chiplet-format-io`.
+`gds2palace` (0.13.0 or newer) and `chiplet-format-io`.
 
 `chiplet-format-io` reads `.chiplet` YAML files. It is not on PyPI yet. It installs from a
 pinned commit of [IHP-GmbH/chiplet-system-spec](https://github.com/IHP-GmbH/chiplet-system-spec) instead. See
@@ -149,7 +149,7 @@ chiplet_xml_composer \
 Output:
 
 ```
-chiplet_xml_composer 1.2.0
+chiplet_xml_composer 1.3.0
   ...
 wrote examples/01_direct_bond/combined.xml
   detected 0 chiplet(s): []
@@ -279,7 +279,7 @@ chiplet_xml_composer \
 ```
 
 ```
-chiplet_xml_composer 1.2.0
+chiplet_xml_composer 1.3.0
   ...
 wrote examples/02_flip_chip_cupillar/combined.xml
   detected 0 chiplet(s): []
@@ -355,7 +355,7 @@ chiplet_xml_composer \
 ```
 
 ```
-chiplet_xml_composer 1.2.0
+chiplet_xml_composer 1.3.0
   ...
 wrote examples/03_two_dies/combined.xml
   detected 2 chiplet(s): ['die1_bondline', 'die2_bondline']
